@@ -1,0 +1,11 @@
+name = "beerbozo-crm-worker"
+main = "src/index.js"
+compatibility_date = "2024-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "beerbozo-crm-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+WORKER_SECRET = "changeme_in_production"
