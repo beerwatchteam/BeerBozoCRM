@@ -188,9 +188,7 @@ const PERSONA_PROMPTS = {
 // Cloud Functions
 // ---------------------------------------------------------------------------
 
-const ALLOWED_ORIGINS = ['https://beerbozocrm.pages.dev', 'https://crm.beerbozo.com.au']
-
-exports.syncEmails = onCall({ secrets: [anthropicKey], cors: ALLOWED_ORIGINS }, async (request) => {
+exports.syncEmails = onCall({ secrets: [anthropicKey], cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { gmailToken } = request.data
@@ -273,7 +271,7 @@ exports.syncEmails = onCall({ secrets: [anthropicKey], cors: ALLOWED_ORIGINS }, 
   return { synced: toSave.length }
 })
 
-exports.getEmailBody = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
+exports.getEmailBody = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { gmailToken, gmailId } = request.data
@@ -301,7 +299,7 @@ exports.getEmailBody = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
   return { body }
 })
 
-exports.sendEmail = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
+exports.sendEmail = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const { gmailToken, to, subject, body, threadId, inReplyTo, references } = request.data
   if (!gmailToken || !to || !body) {
@@ -312,7 +310,7 @@ exports.sendEmail = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
   return { success: true, messageId: result.id }
 })
 
-exports.draftReply = onCall({ secrets: [anthropicKey], cors: ALLOWED_ORIGINS }, async (request) => {
+exports.draftReply = onCall({ secrets: [anthropicKey], cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { emailId } = request.data
@@ -344,7 +342,7 @@ Return ONLY the reply text (no subject line, no metadata).`
   return { draft }
 })
 
-exports.chat = onCall({ secrets: [anthropicKey], cors: ALLOWED_ORIGINS }, async (request) => {
+exports.chat = onCall({ secrets: [anthropicKey], cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { personaId, content } = request.data
