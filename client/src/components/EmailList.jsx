@@ -6,6 +6,7 @@ const FILTERS = [
   { id: 'investor', label: 'Investor' },
   { id: 'advertiser', label: 'Advertiser' },
   { id: 'platform', label: 'Platform' },
+  { id: 'financial', label: 'Financial' },
   { id: 'outreach', label: 'Outreach' },
 ]
 
@@ -14,6 +15,7 @@ const CATEGORY_COLORS = {
   investor: 'bg-blue-100 text-blue-700',
   advertiser: 'bg-purple-100 text-purple-700',
   platform: 'bg-gray-100 text-gray-600',
+  financial: 'bg-yellow-100 text-yellow-700',
   outreach: 'bg-orange-100 text-orange-700',
 }
 

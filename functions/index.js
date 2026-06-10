@@ -1,3 +1,4 @@
+// v2 — CORS + financial category
 const { onCall, HttpsError } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params')
 const { initializeApp } = require('firebase-admin/app')
@@ -122,7 +123,7 @@ function stripHtml(html) {
 // ---------------------------------------------------------------------------
 
 const MODEL = 'claude-sonnet-4-20250514'
-const CATEGORIES = ['collab', 'investor', 'advertiser', 'platform', 'outreach']
+const CATEGORIES = ['collab', 'investor', 'advertiser', 'platform', 'financial', 'outreach']
 
 async function callClaude(apiKey, { system, messages, maxTokens = 512 }) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -151,7 +152,7 @@ async function categorizeAndSummarize(apiKey, { from, subject, snippet }) {
   const prompt = `You are an AI assistant for BeerBozo — an Australian app that shows cheapest drink prices at pubs and bars.
 
 Analyse this email and return a JSON object with exactly these two fields:
-- "category": one of ${CATEGORIES.join(', ')} (collab=collaboration/partnership, investor=investment interest, advertiser=wanting to advertise, platform=tech/platform related, outreach=general/cold/other)
+- "category": one of ${CATEGORIES.join(', ')} (collab=collaboration/partnership, investor=investment interest, advertiser=wanting to advertise, platform=tech/platform related, financial=invoices/billing/payments/accounting, outreach=general/cold/other)
 - "summary": 1-2 sentences — what is it about and what action is needed
 
 Email:
@@ -187,7 +188,9 @@ const PERSONA_PROMPTS = {
 // Cloud Functions
 // ---------------------------------------------------------------------------
 
-exports.syncEmails = onCall({ secrets: [anthropicKey] }, async (request) => {
+const ALLOWED_ORIGINS = ['https://beerbozocrm.pages.dev', 'https://crm.beerbozo.com.au']
+
+exports.syncEmails = onCall({ secrets: [anthropicKey], cors: ALLOWED_ORIGINS }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { gmailToken } = request.data
@@ -270,7 +273,7 @@ exports.syncEmails = onCall({ secrets: [anthropicKey] }, async (request) => {
   return { synced: toSave.length }
 })
 
-exports.getEmailBody = onCall(async (request) => {
+exports.getEmailBody = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { gmailToken, gmailId } = request.data
@@ -298,7 +301,7 @@ exports.getEmailBody = onCall(async (request) => {
   return { body }
 })
 
-exports.sendEmail = onCall(async (request) => {
+exports.sendEmail = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const { gmailToken, to, subject, body, threadId, inReplyTo, references } = request.data
   if (!gmailToken || !to || !body) {
@@ -309,7 +312,7 @@ exports.sendEmail = onCall(async (request) => {
   return { success: true, messageId: result.id }
 })
 
-exports.draftReply = onCall({ secrets: [anthropicKey] }, async (request) => {
+exports.draftReply = onCall({ secrets: [anthropicKey], cors: ALLOWED_ORIGINS }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { emailId } = request.data
@@ -341,7 +344,7 @@ Return ONLY the reply text (no subject line, no metadata).`
   return { draft }
 })
 
-exports.chat = onCall({ secrets: [anthropicKey] }, async (request) => {
+exports.chat = onCall({ secrets: [anthropicKey], cors: ALLOWED_ORIGINS }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { personaId, content } = request.data
