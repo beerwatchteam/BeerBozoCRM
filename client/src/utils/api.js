@@ -125,6 +125,11 @@ async function routePost(path, body) {
     return invoke('suggestTaskStages', body)
   }
 
+  // POST /api/ai/assess-email-stage
+  if (path === '/api/ai/assess-email-stage') {
+    return invoke('assessEmailStage', body)
+  }
+
   // POST /api/chat/:personaId
   const chatMatch = path.match(/^\/api\/chat\/([^/]+)$/)
   if (chatMatch) {

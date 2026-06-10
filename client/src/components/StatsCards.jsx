@@ -1,31 +1,19 @@
 export default function StatsCards({ stats }) {
   const cards = [
-    { label: 'Total emails', value: stats?.total ?? '—', icon: '📧' },
-    { label: 'Unread', value: stats?.unread ?? '—', icon: '🔵', accent: stats?.unread > 0 },
-    { label: 'Collab', value: stats?.collab ?? '—', icon: '🤝' },
-    { label: 'Commercial', value: stats?.commercial ?? '—', icon: '💼' },
+    { label: 'Total',       value: stats?.total      ?? '—', color: 'text-gray-900' },
+    { label: 'Unread',      value: stats?.unread     ?? '—', color: stats?.unread > 0 ? 'text-bb-green' : 'text-gray-900', highlight: stats?.unread > 0 },
+    { label: 'Advertisers', value: stats?.advertiser ?? '—', color: 'text-purple-700' },
+    { label: 'Collabs',     value: stats?.collab     ?? '—', color: 'text-emerald-700' },
+    { label: 'Investors',   value: stats?.investor   ?? '—', color: 'text-blue-700' },
+    { label: 'Financial',   value: stats?.financial  ?? '—', color: 'text-yellow-700' },
   ]
 
   return (
-    <div className="grid grid-cols-4 gap-4 p-6 pb-4">
-      {cards.map((card) => (
-        <div
-          key={card.label}
-          className={`rounded-xl border p-4 ${
-            card.accent
-              ? 'bg-bb-light border-bb-border'
-              : 'bg-white border-gray-200'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-              {card.label}
-            </span>
-            <span className="text-base">{card.icon}</span>
-          </div>
-          <div className={`text-2xl font-bold ${card.accent ? 'text-bb-green' : 'text-gray-900'}`}>
-            {card.value}
-          </div>
+    <div className="flex items-center gap-4 px-6 py-4">
+      {cards.map(card => (
+        <div key={card.label} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border ${card.highlight ? 'bg-bb-green-light border-bb-green/30' : 'bg-white border-bb-border'}`}>
+          <span className={`text-xl font-bold ${card.color}`}>{card.value}</span>
+          <span className="text-xs text-gray-500 font-medium">{card.label}</span>
         </div>
       ))}
     </div>

@@ -27,60 +27,25 @@ export default function App() {
     <Routes>
       <Route path="/" element={!loading && user ? <Navigate to="/crm" replace /> : <Login />} />
 
-      <Route
-        path="/crm"
-        element={
-          <ProtectedRoute user={user} loading={loading}>
-            <Layout user={user} logout={logout} activeTab="crm">
-              <CRM />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/clients"
-        element={
-          <ProtectedRoute user={user} loading={loading}>
-            <Layout user={user} logout={logout} activeTab="clients">
-              <Clients />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/tasks"
-        element={
-          <ProtectedRoute user={user} loading={loading}>
-            <Layout user={user} logout={logout} activeTab="tasks">
-              <Tasks />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/calendar"
-        element={
-          <ProtectedRoute user={user} loading={loading}>
-            <Layout user={user} logout={logout} activeTab="calendar">
-              <ContentCalendar />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/internal"
-        element={
-          <ProtectedRoute user={user} loading={loading}>
-            <Layout user={user} logout={logout} activeTab="internal">
-              <Internal />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
+      {[
+        { path: '/crm',      El: CRM            },
+        { path: '/clients',  El: Clients        },
+        { path: '/tasks',    El: Tasks          },
+        { path: '/calendar', El: ContentCalendar },
+        { path: '/internal', El: Internal       },
+      ].map(({ path, El }) => (
+        <Route
+          key={path}
+          path={path}
+          element={
+            <ProtectedRoute user={user} loading={loading}>
+              <Layout user={user} logout={logout}>
+                <El />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+      ))}
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

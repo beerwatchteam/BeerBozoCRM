@@ -185,6 +185,23 @@ const PERSONA_PROMPTS = {
 }
 
 // ---------------------------------------------------------------------------
+// Workflow stages per category
+// ---------------------------------------------------------------------------
+
+const WORKFLOW_STAGES = {
+  advertiser: [
+    'Initial Contact', 'Awaiting Response', 'Deal Discussion', 'Deal Agreed',
+    'Awaiting Assets', 'Invoice Sent / Awaiting Payment', 'Live & Active', 'Completed',
+  ],
+  collab: [
+    'Initial Contact', 'Brief Sent', 'Content Received', 'Revision', 'Approved', 'Published',
+  ],
+  investor: [
+    'Initial Contact', 'Intro Meeting', 'Pitch Sent', 'Due Diligence', 'Term Sheet', 'Closed',
+  ],
+}
+
+// ---------------------------------------------------------------------------
 // Rule-based categorisation + Advertiser stages
 // ---------------------------------------------------------------------------
 
@@ -434,6 +451,49 @@ exports.chat = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }
   })
 
   return { reply }
+})
+
+exports.assessEmailStage = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
+  const uid = request.auth.uid
+  const { emailId, category } = request.data
+  if (!emailId || !category) throw new HttpsError('invalid-argument', 'emailId and category are required')
+
+  const docSnap = await db.doc(`users/${uid}/emails/${emailId}`).get()
+  if (!docSnap.exists) throw new HttpsError('not-found', 'Email not found')
+
+  const email = docSnap.data()
+  const apiKey = anthropicKey.value()
+  const stages = WORKFLOW_STAGES[category] || WORKFLOW_STAGES.advertiser
+
+  const prompt = `You are analysing an email for BeerBozo CRM — an Australian app for cheapest drink prices.
+
+Based on this email content, determine which stage of the ${category} workflow this thread is currently at.
+
+Workflow stages:
+${stages.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+
+Email:
+From: ${email.from_name || email.from_email}
+Subject: ${email.subject}
+Content: ${(email.full_body || email.snippet || '').slice(0, 1500)}
+
+Return ONLY a JSON object with no other text:
+{"stageIndex": 0, "reasoning": "brief reason (max 15 words)"}
+
+stageIndex is 0-based. Pick the most likely current stage.`
+
+  try {
+    const text = await callClaude(apiKey, {
+      maxTokens: 128,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    const parsed = JSON.parse(text)
+    const stageIndex = Math.min(Math.max(0, parsed.stageIndex || 0), stages.length - 1)
+    return { stageIndex, stageName: stages[stageIndex], reasoning: parsed.reasoning || '' }
+  } catch {
+    return { stageIndex: 0, stageName: stages[0], reasoning: '' }
+  }
 })
 
 exports.recategorizeEmails = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }, async (request) => {

@@ -14,38 +14,56 @@
   }
 
   body {
-    background-color: #ffffff;
+    background-color: #F6F8FA;
     color: #111827;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply bg-bb-green text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-bb-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-bb-green-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
-    @apply bg-white text-bb-green border border-bb-border px-4 py-2 rounded-md text-sm font-medium hover:bg-bb-light transition-colors;
+    @apply bg-white text-gray-700 border border-bb-border px-4 py-2 rounded-lg text-sm font-medium hover:bg-bb-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply text-gray-500 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-bb-light hover:text-gray-900 transition-colors;
+  }
+
+  .card {
+    @apply bg-white rounded-xl shadow-card border border-bb-border;
+  }
+
+  .input {
+    @apply w-full border border-bb-border rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-bb-green focus:border-transparent transition-shadow;
   }
 
   .category-badge {
-    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .page-header {
+    @apply px-6 py-4 bg-white border-b border-bb-border shrink-0;
   }
 }
 
 /* Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #C5DFC0;
-  border-radius: 3px;
+  background: #D1D5DB;
+  border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #1A5C0E;
+  background: #9CA3AF;
 }

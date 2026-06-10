@@ -1,98 +1,398 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  collection, query, orderBy, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc,
+  collection, query, orderBy, getDocs, addDoc, updateDoc, deleteDoc, doc,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { api } from '../utils/api'
-
-const SETTINGS_DOC = 'settings/taskStages'
+import WorkflowTimeline from '../components/WorkflowTimeline'
+import { PlusIcon, SparklesIcon, TrashIcon, CheckIcon } from '../components/Icons'
 
 // ---------------------------------------------------------------------------
-// AI Suggest Stages modal
+// Create Task modal
 // ---------------------------------------------------------------------------
 
-function SuggestStagesModal({ onClose, onAdd }) {
-  const [taskContext, setTaskContext] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [suggestions, setSuggestions] = useState([])
-  const [selected, setSelected] = useState([])
+function CreateTaskModal({ onClose, onSave }) {
+  const [title, setTitle]           = useState('')
+  const [description, setDescription] = useState('')
+  const [stages, setStages]         = useState([])
+  const [stageInput, setStageInput] = useState('')
+  const [aiContext, setAiContext]    = useState('')
+  const [aiLoading, setAiLoading]   = useState(false)
+  const [saving, setSaving]         = useState(false)
 
-  async function handleSuggest() {
-    if (!taskContext.trim()) return
-    setLoading(true)
-    setSuggestions([])
-    setSelected([])
+  async function handleAISuggest() {
+    if (!title.trim() && !aiContext.trim()) return
+    setAiLoading(true)
     try {
-      const result = await api.post('/api/ai/suggest-task-stages', { taskName: taskContext })
-      setSuggestions(result.stages || [])
+      const result = await api.post('/api/ai/suggest-task-stages', {
+        taskName: title || aiContext,
+        description,
+      })
+      setStages(result.stages || [])
     } catch (err) {
-      console.error('Suggest error:', err)
+      console.error(err)
     } finally {
-      setLoading(false)
+      setAiLoading(false)
     }
   }
 
-  function toggleSelect(stage) {
-    setSelected(prev =>
-      prev.includes(stage) ? prev.filter(s => s !== stage) : [...prev, stage]
-    )
+  function addStage(e) {
+    e?.preventDefault()
+    const name = stageInput.trim()
+    if (!name) return
+    setStages(p => [...p, name])
+    setStageInput('')
+  }
+
+  function removeStage(i) {
+    setStages(p => p.filter((_, idx) => idx !== i))
+  }
+
+  async function handleSave(e) {
+    e.preventDefault()
+    if (!title.trim()) return
+    setSaving(true)
+    await onSave({
+      title: title.trim(),
+      description: description.trim(),
+      stages: stages.map(name => ({ name, notes: '', completedAt: null })),
+      activeStageIndex: 0,
+      client_id: null,
+    })
+    setSaving(false)
+    onClose()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">AI Suggest Stages</h2>
-        <div className="space-y-3">
-          <input
-            autoFocus
-            placeholder="Describe what these tasks are for..."
-            value={taskContext}
-            onChange={e => setTaskContext(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSuggest()}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bb-green"
-          />
-          <button
-            onClick={handleSuggest}
-            disabled={loading || !taskContext.trim()}
-            className="btn-primary w-full flex items-center justify-center gap-2"
-          >
-            {loading && <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />}
-            {loading ? 'Generating...' : 'Suggest Stages'}
-          </button>
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-card-lg w-full max-w-lg mx-4 overflow-hidden">
+        <div className="px-6 py-5 border-b border-bb-border">
+          <h2 className="text-base font-semibold text-gray-900">New Task</h2>
+        </div>
 
-          {suggestions.length > 0 && (
-            <div className="space-y-2 pt-1">
-              <p className="text-xs text-gray-500">Click to select stages to add:</p>
-              <div className="flex flex-wrap gap-2">
-                {suggestions.map(s => (
-                  <button
-                    key={s}
-                    onClick={() => toggleSelect(s)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                      selected.includes(s)
-                        ? 'bg-bb-green text-white border-bb-green'
-                        : 'bg-white text-gray-700 border-gray-200 hover:border-bb-green'
-                    }`}
-                  >
-                    {s}
-                  </button>
+        <form onSubmit={handleSave} className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+              Title *
+            </label>
+            <input
+              autoFocus
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="What needs to be done?"
+              className="input"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+              Description
+            </label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Optional details..."
+              rows={2}
+              className="input resize-none"
+            />
+          </div>
+
+          {/* Stages */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Stages
+              </label>
+              <button
+                type="button"
+                onClick={handleAISuggest}
+                disabled={aiLoading || (!title.trim())}
+                className="flex items-center gap-1.5 text-xs font-medium text-bb-green hover:text-bb-green-dark transition-colors disabled:opacity-40"
+              >
+                <SparklesIcon className="w-3.5 h-3.5" />
+                {aiLoading ? 'Thinking...' : 'AI Suggest'}
+              </button>
+            </div>
+
+            {/* Stage list */}
+            {stages.length > 0 && (
+              <div className="space-y-1 mb-2">
+                {stages.map((stage, i) => (
+                  <div key={i} className="flex items-center gap-2 px-3 py-2 bg-bb-light rounded-lg border border-bb-border">
+                    <span className="w-5 h-5 rounded-full bg-white border border-bb-border flex items-center justify-center text-xs font-bold text-gray-500">
+                      {i + 1}
+                    </span>
+                    <span className="flex-1 text-sm text-gray-800">{stage}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeStage(i)}
+                      className="text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
                 ))}
               </div>
+            )}
+
+            {/* Add stage input */}
+            <div className="flex gap-2">
+              <input
+                value={stageInput}
+                onChange={e => setStageInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addStage(e)}
+                placeholder="Stage name..."
+                className="input flex-1"
+              />
+              <button
+                type="button"
+                onClick={addStage}
+                disabled={!stageInput.trim()}
+                className="btn-secondary px-3"
+              >
+                <PlusIcon />
+              </button>
             </div>
-          )}
-        </div>
-        <div className="flex justify-end gap-2 pt-4">
-          <button onClick={onClose} className="btn-secondary">Cancel</button>
-          <button
-            onClick={() => { onAdd(selected); onClose() }}
-            disabled={selected.length === 0}
-            className="btn-primary"
-          >
-            Add {selected.length > 0 ? selected.length : ''} Stage{selected.length !== 1 ? 's' : ''}
-          </button>
-        </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+            <button type="submit" disabled={saving || !title.trim()} className="btn-primary">
+              {saving ? 'Creating...' : 'Create Task'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Task Detail (right pane)
+// ---------------------------------------------------------------------------
+
+function TaskDetail({ task, onUpdate, onDelete }) {
+  const [editingTitle, setEditingTitle]       = useState(false)
+  const [titleValue, setTitleValue]           = useState(task.title)
+  const [editingDesc, setEditingDesc]         = useState(false)
+  const [descValue, setDescValue]             = useState(task.description || '')
+  const [saving, setSaving]                   = useState(false)
+
+  useEffect(() => {
+    setTitleValue(task.title)
+    setDescValue(task.description || '')
+    setEditingTitle(false)
+    setEditingDesc(false)
+  }, [task.id])
+
+  const isComplete = task.activeStageIndex >= (task.stages?.length || 0)
+  const progress = task.stages?.length
+    ? `${Math.min(task.activeStageIndex, task.stages.length)} / ${task.stages.length}`
+    : 'No stages'
+
+  async function saveTitle() {
+    if (!titleValue.trim() || titleValue === task.title) {
+      setEditingTitle(false)
+      setTitleValue(task.title)
+      return
+    }
+    setSaving(true)
+    const updated = { ...task, title: titleValue.trim() }
+    await updateDoc(doc(db, 'tasks', task.id), { title: titleValue.trim(), updated_at: new Date().toISOString() })
+    onUpdate(updated)
+    setSaving(false)
+    setEditingTitle(false)
+  }
+
+  async function saveDesc() {
+    const updated = { ...task, description: descValue }
+    await updateDoc(doc(db, 'tasks', task.id), { description: descValue, updated_at: new Date().toISOString() })
+    onUpdate(updated)
+    setEditingDesc(false)
+  }
+
+  async function handleAdvance() {
+    const newIndex = task.activeStageIndex + 1
+    const newStages = task.stages.map((s, i) =>
+      i === task.activeStageIndex ? { ...s, completedAt: new Date().toISOString() } : s
+    )
+    const updated = { ...task, stages: newStages, activeStageIndex: newIndex }
+    await updateDoc(doc(db, 'tasks', task.id), {
+      stages: newStages,
+      activeStageIndex: newIndex,
+      updated_at: new Date().toISOString(),
+    })
+    onUpdate(updated)
+  }
+
+  async function handleUpdateNotes(index, notes) {
+    const newStages = task.stages.map((s, i) => i === index ? { ...s, notes } : s)
+    const updated = { ...task, stages: newStages }
+    await updateDoc(doc(db, 'tasks', task.id), { stages: newStages, updated_at: new Date().toISOString() })
+    onUpdate(updated)
+  }
+
+  const stageData = {}
+  task.stages?.forEach((s, i) => {
+    stageData[i] = { notes: s.notes, completedAt: s.completedAt }
+  })
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Task header */}
+      <div className="px-6 py-5 border-b border-bb-border bg-white shrink-0">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            {editingTitle ? (
+              <input
+                autoFocus
+                value={titleValue}
+                onChange={e => setTitleValue(e.target.value)}
+                onBlur={saveTitle}
+                onKeyDown={e => e.key === 'Enter' && saveTitle()}
+                className="input text-lg font-semibold"
+              />
+            ) : (
+              <h2
+                onClick={() => setEditingTitle(true)}
+                className="text-lg font-semibold text-gray-900 cursor-text hover:text-bb-green transition-colors"
+              >
+                {task.title}
+              </h2>
+            )}
+
+            <div className="flex items-center gap-3 mt-1">
+              <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${
+                isComplete
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : task.stages?.length === 0
+                    ? 'bg-gray-100 text-gray-500'
+                    : 'bg-bb-green-light text-bb-green'
+              }`}>
+                {isComplete ? (
+                  <><CheckIcon className="w-3 h-3" /> Complete</>
+                ) : (
+                  <>Stage {task.stages?.length ? `${task.activeStageIndex + 1} of ${task.stages.length}` : '–'}</>
+                )}
+              </span>
+              <span className="text-xs text-gray-400">
+                Created {new Date(task.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={() => onDelete(task.id)}
+            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+          >
+            <TrashIcon className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Description */}
+        <div className="mt-3">
+          {editingDesc ? (
+            <div className="space-y-2">
+              <textarea
+                autoFocus
+                value={descValue}
+                onChange={e => setDescValue(e.target.value)}
+                rows={3}
+                placeholder="Describe this task..."
+                className="input resize-none text-sm"
+              />
+              <div className="flex gap-2">
+                <button onClick={saveDesc} className="btn-primary text-xs px-3 py-1.5">Save</button>
+                <button onClick={() => { setEditingDesc(false); setDescValue(task.description || '') }} className="btn-secondary text-xs px-3 py-1.5">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <p
+              onClick={() => setEditingDesc(true)}
+              className={`text-sm cursor-text rounded-lg px-1 -mx-1 hover:bg-bb-light transition-colors ${task.description ? 'text-gray-600' : 'text-gray-400'}`}
+            >
+              {task.description || 'Click to add description...'}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Timeline */}
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+        {!task.stages?.length ? (
+          <div className="text-center py-12 text-gray-400">
+            <div className="text-3xl mb-2">📋</div>
+            <p className="text-sm">No stages yet.</p>
+            <p className="text-xs mt-1">Edit this task to add stages.</p>
+          </div>
+        ) : (
+          <WorkflowTimeline
+            stageNames={task.stages.map(s => s.name)}
+            activeIndex={task.activeStageIndex}
+            stageData={stageData}
+            onAdvance={handleAdvance}
+            onUpdateNotes={handleUpdateNotes}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Task card (in list)
+// ---------------------------------------------------------------------------
+
+function TaskCard({ task, selected, onSelect }) {
+  const stages = task.stages || []
+  const done   = Math.min(task.activeStageIndex, stages.length)
+  const total  = stages.length
+  const pct    = total ? Math.round((done / total) * 100) : 0
+  const isComplete = done >= total && total > 0
+
+  return (
+    <button
+      onClick={() => onSelect(task)}
+      className={`w-full text-left p-4 rounded-xl border transition-all ${
+        selected
+          ? 'border-bb-green bg-white shadow-card-md ring-1 ring-bb-green/20'
+          : 'border-bb-border bg-white hover:border-gray-300 hover:shadow-card'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <h3 className={`text-sm font-semibold leading-tight flex-1 ${selected ? 'text-bb-green' : 'text-gray-900'}`}>
+          {task.title}
+        </h3>
+        <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${
+          isComplete
+            ? 'bg-emerald-100 text-emerald-700'
+            : total === 0
+              ? 'bg-gray-100 text-gray-500'
+              : 'bg-bb-green-light text-bb-green'
+        }`}>
+          {isComplete ? 'Done' : total === 0 ? 'No stages' : `${done}/${total}`}
+        </span>
+      </div>
+
+      {task.description && (
+        <p className="text-xs text-gray-500 truncate mb-2">{task.description}</p>
+      )}
+
+      {total > 0 && (
+        <div>
+          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${isComplete ? 'bg-emerald-400' : 'bg-bb-green'}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          {!isComplete && stages[task.activeStageIndex] && (
+            <p className="text-xs text-gray-400 mt-1.5 truncate">
+              Current: {stages[task.activeStageIndex].name}
+            </p>
+          )}
+        </div>
+      )}
+    </button>
   )
 }
 
@@ -101,242 +401,126 @@ function SuggestStagesModal({ onClose, onAdd }) {
 // ---------------------------------------------------------------------------
 
 export default function Tasks() {
-  const [stages, setStages] = useState([])
-  const [tasks, setTasks] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [newStageName, setNewStageName] = useState('')
-  const [addingStage, setAddingStage] = useState(false)
-  const [showSuggest, setShowSuggest] = useState(false)
-  const [newTaskInputs, setNewTaskInputs] = useState({}) // { stageId: '' }
-  const [expandedTask, setExpandedTask] = useState(null)
+  const [tasks, setTasks]               = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [selected, setSelected]         = useState(null)
+  const [showCreate, setShowCreate]     = useState(false)
+  const [filterComplete, setFilterComplete] = useState(false)
 
-  const loadData = useCallback(async () => {
-    const [stagesSnap, tasksSnap] = await Promise.all([
-      getDoc(doc(db, SETTINGS_DOC)),
-      getDocs(query(collection(db, 'tasks'), orderBy('created_at', 'asc'))),
-    ])
-    const loadedStages = stagesSnap.exists() ? (stagesSnap.data().stages || []) : ['To Do', 'In Progress', 'Done']
-    setStages(loadedStages)
-    setTasks(tasksSnap.docs.map(d => ({ ...d.data(), id: d.id })))
+  const loadTasks = useCallback(async () => {
+    const snap = await getDocs(query(collection(db, 'tasks'), orderBy('created_at', 'desc')))
+    setTasks(snap.docs.map(d => ({ ...d.data(), id: d.id })))
   }, [])
 
   useEffect(() => {
-    loadData().finally(() => setLoading(false))
+    loadTasks().finally(() => setLoading(false))
   }, [])
 
-  async function saveStages(newStages) {
-    await setDoc(doc(db, SETTINGS_DOC), { stages: newStages })
-    setStages(newStages)
-  }
-
-  async function handleAddStage(e) {
-    e.preventDefault()
-    if (!newStageName.trim()) return
-    const updated = [...stages, newStageName.trim()]
-    await saveStages(updated)
-    setNewStageName('')
-    setAddingStage(false)
-  }
-
-  async function handleAddSuggestedStages(selected) {
-    if (!selected.length) return
-    const existing = new Set(stages)
-    const toAdd = selected.filter(s => !existing.has(s))
-    if (toAdd.length) await saveStages([...stages, ...toAdd])
-  }
-
-  async function handleDeleteStage(stage) {
-    const updated = stages.filter(s => s !== stage)
-    await saveStages(updated)
-    // Move orphaned tasks to first remaining stage
-    const orphaned = tasks.filter(t => t.stage === stage)
-    for (const task of orphaned) {
-      await updateDoc(doc(db, 'tasks', task.id), { stage: updated[0] || 'To Do' })
-    }
-    await loadData()
-  }
-
-  async function handleAddTask(stage) {
-    const title = (newTaskInputs[stage] || '').trim()
-    if (!title) return
-    await addDoc(collection(db, 'tasks'), {
-      title,
-      description: '',
-      stage,
+  async function handleCreate(data) {
+    const ref = await addDoc(collection(db, 'tasks'), {
+      ...data,
       created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     })
-    setNewTaskInputs(p => ({ ...p, [stage]: '' }))
-    await loadData()
+    await loadTasks()
+    // Select the newly created task
+    setSelected({ ...data, id: ref.id, created_at: new Date().toISOString() })
   }
 
-  async function handleMoveTask(taskId, stage) {
-    await updateDoc(doc(db, 'tasks', taskId), { stage, updated_at: new Date().toISOString() })
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, stage } : t))
+  function handleUpdate(updated) {
+    setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
+    setSelected(updated)
   }
 
-  async function handleDeleteTask(taskId) {
-    await deleteDoc(doc(db, 'tasks', taskId))
-    setTasks(prev => prev.filter(t => t.id !== taskId))
-    if (expandedTask === taskId) setExpandedTask(null)
+  async function handleDelete(id) {
+    await deleteDoc(doc(db, 'tasks', id))
+    setTasks(prev => prev.filter(t => t.id !== id))
+    setSelected(null)
   }
 
-  async function handleSaveTaskDesc(task, description) {
-    await updateDoc(doc(db, 'tasks', task.id), { description })
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, description } : t))
-  }
+  const displayed = tasks.filter(t => {
+    const complete = t.activeStageIndex >= (t.stages?.length || 0) && (t.stages?.length || 0) > 0
+    return filterComplete ? true : !complete
+  })
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="w-6 h-6 border-2 border-bb-green border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
+  const completeCount = tasks.filter(t =>
+    t.activeStageIndex >= (t.stages?.length || 0) && (t.stages?.length || 0) > 0
+  ).length
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Toolbar */}
-      <div className="px-6 py-3 border-b border-bb-border bg-white shrink-0 flex items-center gap-3">
-        <span className="text-sm font-semibold text-gray-700">Tasks</span>
-        <div className="flex-1" />
-        <button
-          onClick={() => setShowSuggest(true)}
-          className="btn-secondary text-sm"
-        >
-          AI Suggest Stages
-        </button>
-        {addingStage ? (
-          <form onSubmit={handleAddStage} className="flex items-center gap-2">
-            <input
-              autoFocus
-              placeholder="Stage name..."
-              value={newStageName}
-              onChange={e => setNewStageName(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-bb-green w-40"
-            />
-            <button type="submit" className="btn-primary text-sm">Add</button>
-            <button type="button" onClick={() => { setAddingStage(false); setNewStageName('') }} className="btn-secondary text-sm">Cancel</button>
-          </form>
-        ) : (
-          <button onClick={() => setAddingStage(true)} className="btn-primary text-sm">
-            + Add Stage
+    <div className="flex h-full overflow-hidden bg-bb-light">
+      {/* Left pane — task list */}
+      <div className="w-[320px] shrink-0 flex flex-col h-full border-r border-bb-border bg-white">
+        {/* Header */}
+        <div className="px-4 py-4 border-b border-bb-border">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-semibold text-gray-900">
+              {displayed.length} task{displayed.length !== 1 ? 's' : ''}
+            </span>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5"
+            >
+              <PlusIcon /> New Task
+            </button>
+          </div>
+          <button
+            onClick={() => setFilterComplete(p => !p)}
+            className={`text-xs font-medium transition-colors ${filterComplete ? 'text-bb-green' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            {filterComplete ? 'Hiding' : 'Show'} {completeCount} complete
           </button>
-        )}
+        </div>
+
+        {/* Task list */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {loading && (
+            <div className="flex justify-center pt-8">
+              <div className="w-5 h-5 border-2 border-bb-green border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+          {!loading && displayed.length === 0 && (
+            <div className="text-center pt-12 text-gray-400">
+              <div className="text-3xl mb-2">✅</div>
+              <p className="text-sm">{tasks.length === 0 ? 'No tasks yet' : 'All done!'}</p>
+            </div>
+          )}
+          {displayed.map(task => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              selected={selected?.id === task.id}
+              onSelect={setSelected}
+            />
+          ))}
+        </div>
       </div>
 
-      {/* Stage sections */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-        {stages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-40 text-gray-400 gap-2">
-            <p className="text-sm">No stages yet. Add a stage to get started.</p>
+      {/* Right pane — task detail */}
+      <div className="flex-1 overflow-hidden bg-bb-light">
+        {selected ? (
+          <div className="h-full bg-white m-4 rounded-2xl border border-bb-border shadow-card overflow-hidden">
+            <TaskDetail
+              key={selected.id}
+              task={selected}
+              onUpdate={handleUpdate}
+              onDelete={handleDelete}
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
+            <div className="text-5xl">📋</div>
+            <p className="text-sm font-medium text-gray-500">Select a task to view its timeline</p>
+            <button onClick={() => setShowCreate(true)} className="btn-primary text-sm flex items-center gap-2 mt-2">
+              <PlusIcon /> Create your first task
+            </button>
           </div>
         )}
-
-        {stages.map(stage => {
-          const stageTasks = tasks.filter(t => t.stage === stage)
-          return (
-            <div key={stage} className="border border-gray-200 rounded-xl overflow-hidden">
-              {/* Stage header */}
-              <div className="flex items-center justify-between px-4 py-2 bg-bb-light border-b border-gray-200">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-gray-700">{stage}</span>
-                  <span className="text-xs bg-white text-gray-500 border border-gray-200 rounded-full px-2 py-0.5">
-                    {stageTasks.length}
-                  </span>
-                </div>
-                <button
-                  onClick={() => handleDeleteStage(stage)}
-                  className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-                >
-                  Delete stage
-                </button>
-              </div>
-
-              {/* Tasks */}
-              <div className="divide-y divide-gray-100">
-                {stageTasks.map(task => (
-                  <div key={task.id} className="bg-white">
-                    <div
-                      className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50"
-                      onClick={() => setExpandedTask(expandedTask === task.id ? null : task.id)}
-                    >
-                      <span className="text-sm text-gray-800 flex-1 truncate">{task.title}</span>
-                      <select
-                        value={task.stage}
-                        onChange={e => { e.stopPropagation(); handleMoveTask(task.id, e.target.value) }}
-                        onClick={e => e.stopPropagation()}
-                        className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-bb-green bg-white"
-                      >
-                        {stages.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                      <button
-                        onClick={e => { e.stopPropagation(); handleDeleteTask(task.id) }}
-                        className="text-gray-400 hover:text-red-500 transition-colors text-xs"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                    {expandedTask === task.id && (
-                      <TaskExpanded task={task} onSave={handleSaveTaskDesc} />
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Add task row */}
-              <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
-                <form
-                  onSubmit={e => { e.preventDefault(); handleAddTask(stage) }}
-                  className="flex gap-2"
-                >
-                  <input
-                    placeholder="Add task..."
-                    value={newTaskInputs[stage] || ''}
-                    onChange={e => setNewTaskInputs(p => ({ ...p, [stage]: e.target.value }))}
-                    className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-bb-green"
-                  />
-                  <button type="submit" className="btn-primary text-xs px-3">Add</button>
-                </form>
-              </div>
-            </div>
-          )
-        })}
       </div>
 
-      {showSuggest && (
-        <SuggestStagesModal
-          onClose={() => setShowSuggest(false)}
-          onAdd={handleAddSuggestedStages}
-        />
+      {showCreate && (
+        <CreateTaskModal onClose={() => setShowCreate(false)} onSave={handleCreate} />
       )}
-    </div>
-  )
-}
-
-function TaskExpanded({ task, onSave }) {
-  const [desc, setDesc] = useState(task.description || '')
-  const [saving, setSaving] = useState(false)
-
-  async function handleSave() {
-    setSaving(true)
-    await onSave(task, desc)
-    setSaving(false)
-  }
-
-  return (
-    <div className="px-4 pb-3 bg-white">
-      <textarea
-        value={desc}
-        onChange={e => setDesc(e.target.value)}
-        rows={3}
-        placeholder="Add notes or description..."
-        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bb-green resize-none"
-      />
-      <div className="flex justify-end mt-2">
-        <button onClick={handleSave} disabled={saving} className="btn-primary text-xs">
-          {saving ? 'Saving...' : 'Save'}
-        </button>
-      </div>
     </div>
   )
 }
