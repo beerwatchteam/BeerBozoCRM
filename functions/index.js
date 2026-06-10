@@ -188,7 +188,7 @@ const PERSONA_PROMPTS = {
 // Cloud Functions
 // ---------------------------------------------------------------------------
 
-exports.syncEmails = onCall({ secrets: [anthropicKey], cors: true }, async (request) => {
+exports.syncEmails = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { gmailToken } = request.data
@@ -271,7 +271,7 @@ exports.syncEmails = onCall({ secrets: [anthropicKey], cors: true }, async (requ
   return { synced: toSave.length }
 })
 
-exports.getEmailBody = onCall({ cors: true }, async (request) => {
+exports.getEmailBody = onCall({ cors: true, invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { gmailToken, gmailId } = request.data
@@ -299,7 +299,7 @@ exports.getEmailBody = onCall({ cors: true }, async (request) => {
   return { body }
 })
 
-exports.sendEmail = onCall({ cors: true }, async (request) => {
+exports.sendEmail = onCall({ cors: true, invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const { gmailToken, to, subject, body, threadId, inReplyTo, references } = request.data
   if (!gmailToken || !to || !body) {
@@ -310,7 +310,7 @@ exports.sendEmail = onCall({ cors: true }, async (request) => {
   return { success: true, messageId: result.id }
 })
 
-exports.draftReply = onCall({ secrets: [anthropicKey], cors: true }, async (request) => {
+exports.draftReply = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { emailId } = request.data
@@ -342,7 +342,7 @@ Return ONLY the reply text (no subject line, no metadata).`
   return { draft }
 })
 
-exports.chat = onCall({ secrets: [anthropicKey], cors: true }, async (request) => {
+exports.chat = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { personaId, content } = request.data
