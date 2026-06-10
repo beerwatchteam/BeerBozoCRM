@@ -7,5 +7,13 @@ binding = "DB"
 database_name = "beerbozo-crm-db"
 database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
 
+# Non-sensitive vars — override in dashboard for production
 [vars]
-WORKER_SECRET = "changeme_in_production"
+CLIENT_URL = "http://localhost:5173"
+GMAIL_REDIRECT_URI = "http://localhost:8787/auth/callback"
+
+# Secrets (set via `wrangler secret put` or dashboard, NOT here):
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# JWT_SECRET
+# ANTHROPIC_API_KEY

@@ -21,6 +21,18 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+  session_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  user_email TEXT NOT NULL,
+  user_name TEXT,
+  user_picture TEXT,
+  access_token TEXT NOT NULL,
+  refresh_token TEXT,
+  expiry_date INTEGER,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email_id TEXT,
