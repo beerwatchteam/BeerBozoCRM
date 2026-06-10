@@ -5,6 +5,8 @@ import {
   orderBy,
   limit,
   getDocs,
+  doc,
+  updateDoc,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '../firebase'
@@ -52,9 +54,10 @@ async function routeGet(path) {
   if (path === '/api/emails/stats') {
     const snap = await getDocs(collection(db, `users/${uid}/emails`))
     const emails = snap.docs.map(d => d.data())
-    const stats = { total: emails.length, unread: 0, collab: 0, investor: 0, advertiser: 0, platform: 0, outreach: 0 }
+    const stats = { total: emails.length, unread: 0, needs_review: 0, collab: 0, investor: 0, advertiser: 0, platform: 0, financial: 0, outreach: 0 }
     for (const e of emails) {
       if (!e.is_read) stats.unread++
+      if (e.needs_review) stats.needs_review++
       if (e.category && stats[e.category] !== undefined) stats[e.category]++
     }
     return stats
@@ -139,7 +142,26 @@ async function routePost(path, body) {
   throw new Error(`Unknown POST path: ${path}`)
 }
 
+async function routePut(path, body) {
+  const uid = getUid()
+  if (!uid) throw new Error('Not authenticated')
+
+  // PUT /api/emails/:id/category
+  const catMatch = path.match(/^\/api\/emails\/([^/]+)\/category$/)
+  if (catMatch) {
+    const emailId = catMatch[1]
+    await updateDoc(doc(db, `users/${uid}/emails`, emailId), {
+      category: body.category,
+      needs_review: false,
+    })
+    return { success: true }
+  }
+
+  throw new Error(`Unknown PUT path: ${path}`)
+}
+
 export const api = {
-  get: (path) => routeGet(path),
+  get:  (path)       => routeGet(path),
   post: (path, body) => routePost(path, body),
+  put:  (path, body) => routePut(path, body),
 }

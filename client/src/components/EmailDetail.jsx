@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db, auth } from '../firebase'
 import { api } from '../utils/api'
@@ -29,6 +29,49 @@ const WORKFLOW_STAGES = {
 
 const WORKFLOW_CATEGORIES = new Set(['advertiser', 'collab', 'investor'])
 
+const ALL_CATEGORIES = ['collab', 'investor', 'advertiser', 'platform', 'financial', 'outreach']
+
+function CategoryDropdown({ currentCategory, onSelect }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(p => !p)}
+        className={`category-badge cursor-pointer hover:opacity-80 transition-opacity ${CATEGORY_COLORS[currentCategory] || CATEGORY_COLORS.outreach}`}
+        title="Click to change category"
+      >
+        {currentCategory} ▾
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-card-lg border border-bb-border py-1 z-50 min-w-[140px]">
+          {ALL_CATEGORIES.map(cat => (
+            <button
+              key={cat}
+              onClick={() => { onSelect(cat); setOpen(false) }}
+              className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-bb-light transition-colors capitalize ${
+                cat === currentCategory ? 'text-bb-green' : 'text-gray-700'
+              }`}
+            >
+              <span className={`inline-block w-2 h-2 rounded-full mr-2 ${CATEGORY_COLORS[cat]?.split(' ')[0]}`} />
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function formatDate(dateStr) {
   try {
     return new Date(dateStr).toLocaleString('en-AU', {
@@ -38,7 +81,7 @@ function formatDate(dateStr) {
   } catch { return dateStr }
 }
 
-export default function EmailDetail({ email, onEmailRead }) {
+export default function EmailDetail({ email, onEmailRead, onCategoryChange }) {
   const [body, setBody]                   = useState(null)
   const [bodyLoading, setBodyLoading]     = useState(false)
   const [draftReply, setDraftReply]       = useState('')
@@ -48,12 +91,13 @@ export default function EmailDetail({ email, onEmailRead }) {
   const [sendSuccess, setSendSuccess]     = useState(false)
   const [showCompose, setShowCompose]     = useState(false)
   const [error, setError]                 = useState('')
-  const [workflowStage, setWorkflowStage] = useState(0)
-  const [aiAssessing, setAiAssessing]     = useState(false)
+  const [workflowStage, setWorkflowStage]     = useState(0)
+  const [aiAssessing, setAiAssessing]         = useState(false)
+  const [currentCategory, setCurrentCategory] = useState(email.category)
 
   const emailId = email.gmail_id || email.id
-  const hasWorkflow = WORKFLOW_CATEGORIES.has(email.category)
-  const workflowStages = WORKFLOW_STAGES[email.category] || []
+  const hasWorkflow = WORKFLOW_CATEGORIES.has(currentCategory)
+  const workflowStages = WORKFLOW_STAGES[currentCategory] || []
 
   useEffect(() => {
     setBody(null)
@@ -62,6 +106,7 @@ export default function EmailDetail({ email, onEmailRead }) {
     setSendSuccess(false)
     setError('')
     setWorkflowStage(email.workflow_stage_index ?? 0)
+    setCurrentCategory(email.category)
 
     if (email.full_body) {
       setBody(email.full_body)
@@ -80,6 +125,17 @@ export default function EmailDetail({ email, onEmailRead }) {
       setBody(email.snippet || '')
     } finally {
       setBodyLoading(false)
+    }
+  }
+
+  async function handleCategoryChange(newCategory) {
+    setCurrentCategory(newCategory)
+    try {
+      await api.put(`/api/emails/${emailId}/category`, { category: newCategory })
+      if (onCategoryChange) onCategoryChange(emailId, newCategory)
+    } catch (err) {
+      console.error('Category update error:', err)
+      setCurrentCategory(email.category) // revert on error
     }
   }
 
@@ -162,9 +218,17 @@ export default function EmailDetail({ email, onEmailRead }) {
             <h2 className="text-base font-semibold text-gray-900 leading-tight">
               {email.subject || '(No subject)'}
             </h2>
-            <span className={`category-badge shrink-0 ${CATEGORY_COLORS[email.category] || CATEGORY_COLORS.outreach}`}>
-              {email.category}
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              {email.needs_review && (
+                <span className="category-badge bg-amber-100 text-amber-700 text-[10px]">
+                  Needs review
+                </span>
+              )}
+              <CategoryDropdown
+                currentCategory={currentCategory}
+                onSelect={handleCategoryChange}
+              />
+            </div>
           </div>
           <div className="flex items-center gap-3 text-sm text-gray-500">
             <span>
@@ -255,7 +319,7 @@ export default function EmailDetail({ email, onEmailRead }) {
         <div className="w-[280px] shrink-0 border-l border-bb-border bg-white flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-bb-border">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              {email.category} workflow
+              {currentCategory} workflow
             </p>
             <p className="text-xs text-gray-400 mt-0.5">Click a stage to update</p>
           </div>

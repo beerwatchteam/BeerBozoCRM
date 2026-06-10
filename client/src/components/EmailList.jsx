@@ -1,13 +1,14 @@
 import { formatDistanceToNow, parseISO } from 'date-fns'
 
 const FILTERS = [
-  { id: 'all',        label: 'All'        },
-  { id: 'advertiser', label: 'Advertiser' },
-  { id: 'collab',     label: 'Collab'     },
-  { id: 'investor',   label: 'Investor'   },
-  { id: 'financial',  label: 'Financial'  },
-  { id: 'platform',   label: 'Platform'   },
-  { id: 'outreach',   label: 'Outreach'   },
+  { id: 'all',          label: 'All'          },
+  { id: 'needs_review', label: 'Needs review', amber: true },
+  { id: 'advertiser',   label: 'Advertiser'   },
+  { id: 'collab',       label: 'Collab'       },
+  { id: 'investor',     label: 'Investor'     },
+  { id: 'financial',    label: 'Financial'    },
+  { id: 'platform',     label: 'Platform'     },
+  { id: 'outreach',     label: 'Outreach'     },
 ]
 
 const CATEGORY_COLORS = {
@@ -30,7 +31,11 @@ function formatDate(dateStr) {
 }
 
 export default function EmailList({ emails, selectedId, onSelect, filter, onFilterChange, syncing }) {
-  const filtered = filter === 'all' ? emails : emails.filter((e) => e.category === filter)
+  const filtered = filter === 'all'
+    ? emails
+    : filter === 'needs_review'
+      ? emails.filter(e => e.needs_review)
+      : emails.filter(e => e.category === filter)
 
   return (
     <div className="flex flex-col h-full">
@@ -43,8 +48,8 @@ export default function EmailList({ emails, selectedId, onSelect, filter, onFilt
               onClick={() => onFilterChange(f.id)}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
                 filter === f.id
-                  ? 'bg-bb-green text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  ? f.amber ? 'bg-amber-500 text-white' : 'bg-bb-green text-white'
+                  : f.amber ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               {f.label}
@@ -95,6 +100,11 @@ export default function EmailList({ emails, selectedId, onSelect, filter, onFilt
 
               <div className="flex items-center gap-1.5">
                 {isUnread && <span className="w-1.5 h-1.5 rounded-full bg-bb-green shrink-0" />}
+                {email.needs_review && (
+                  <span className="category-badge text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 shrink-0">
+                    Review
+                  </span>
+                )}
                 <span className={`category-badge text-[10px] px-1.5 py-0.5 ${CATEGORY_COLORS[email.category] || CATEGORY_COLORS.outreach}`}>
                   {email.category}
                 </span>

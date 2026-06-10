@@ -99,12 +99,24 @@ export default function CRM() {
   }
 
   function handleEmailRead(emailId) {
-    setEmails((prev) =>
-      prev.map((e) =>
-        (e.id === emailId || e.gmail_id === emailId) ? { ...e, is_read: 1 } : e
+    setEmails(prev =>
+      prev.map(e => (e.id === emailId || e.gmail_id === emailId) ? { ...e, is_read: 1 } : e)
+    )
+    setStats(prev => prev ? { ...prev, unread: Math.max(0, (prev.unread || 0) - 1) } : prev)
+  }
+
+  function handleEmailCategoryChange(emailId, newCategory) {
+    setEmails(prev =>
+      prev.map(e =>
+        (e.id === emailId || e.gmail_id === emailId)
+          ? { ...e, category: newCategory, needs_review: false }
+          : e
       )
     )
-    setStats((prev) => prev ? { ...prev, unread: Math.max(0, (prev.unread || 0) - 1) } : prev)
+    if (selectedEmail && (selectedEmail.id === emailId || selectedEmail.gmail_id === emailId)) {
+      setSelectedEmail(prev => ({ ...prev, category: newCategory, needs_review: false }))
+    }
+    setStats(prev => prev ? { ...prev, needs_review: Math.max(0, (prev.needs_review || 0) - 1) } : prev)
   }
 
   return (
@@ -180,6 +192,7 @@ export default function CRM() {
               key={selectedEmail.gmail_id || selectedEmail.id}
               email={selectedEmail}
               onEmailRead={handleEmailRead}
+              onCategoryChange={handleEmailCategoryChange}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">

@@ -216,37 +216,89 @@ const ADVERTISER_STAGES = [
   'Completed',
 ]
 
-function ruleBasedCategory(fromEmail, subject, snippet) {
+// Returns { category, needsReview }
+// Matches sender domain (from_email) and subject only — no AI, no snippet
+function ruleBasedCategory(fromEmail, subject) {
   const from = (fromEmail || '').toLowerCase()
-  const sub = (subject || '').toLowerCase()
-  const body = (snippet || '').toLowerCase()
-  const text = sub + ' ' + body
+  const sub  = (subject  || '').toLowerCase()
 
-  const financialDomains = ['@google.com', '@apple.com', '@xero.com', '@ato.gov.au', '@stripe.com', '@paypal.com', '@quickbooks']
-  const financialKeywords = ['billing', 'invoice', 'payment received', 'receipt', 'subscription', 'tax invoice', 'admob revenue', 'xero', 'gst', 'payout', 'ato notice', 'app store payment', 'itunes connect']
-  if (financialDomains.some(d => from.includes(d)) || financialKeywords.some(k => text.includes(k))) return 'financial'
+  // ── FINANCIAL ──────────────────────────────────────────────────────────
+  const financialDomains = [
+    '@google.com', '@apple.com', '@googleadmob.com', '@firebase.google.com',
+    '@cloudflare.com', '@xero.com', '@myob.com', '@ato.gov.au',
+    '@paypal.com', '@stripe.com',
+  ]
+  const financialKeywords = [
+    'invoice', 'payment', 'receipt', 'billing', 'bill',
+    'subscription', 'tax', 'statement', 'overdue', 'refund',
+    'charge', 'transaction', 'account balance', 'direct debit', 'remittance',
+  ]
+  if (financialDomains.some(d => from.includes(d)) || financialKeywords.some(k => sub.includes(k))) {
+    return { category: 'financial', needsReview: false }
+  }
 
-  const platformDomains = ['@github.com', '@cloudflare.com', 'noreply@md.gitter.im']
-  const platformKeywords = ['app store', 'google play', 'admob', 'firebase', 'cloudflare', 'github', 'testflight', 'app review', 'ready for sale', 'app has been', 'developer account', 'play console', 'app store connect']
-  if (platformDomains.some(d => from.includes(d)) || platformKeywords.some(k => text.includes(k))) return 'platform'
+  // ── PLATFORM ────────────────────────────────────────────────────────────
+  const platformDomains = [
+    '@github.com', '@firebase.google.com', '@cloudflare.com',
+    '@admob.google.com', '@developer.apple.com',
+    '@appstoreconnect.apple.com', '@testflight.apple.com',
+  ]
+  const platformKeywords = [
+    'app store', 'google play', 'admob', 'firebase',
+    'cloudflare', 'github', 'testflight', 'app review',
+    'developer', 'deployment', 'build', 'crash',
+    'update approved', 'update rejected', 'new version', 'release',
+  ]
+  if (platformDomains.some(d => from.includes(d)) || platformKeywords.some(k => sub.includes(k))) {
+    return { category: 'platform', needsReview: false }
+  }
 
-  const investorKeywords = ['invest', 'funding', 'venture', 'angel investor', 'seed round', 'pitch deck', 'term sheet', 'raise capital', 'shareholder', 'due diligence', 'cap table']
-  if (investorKeywords.some(k => text.includes(k))) return 'investor'
+  // ── INVESTOR ─────────────────────────────────────────────────────────────
+  const investorKeywords = [
+    'invest', 'investment', 'investor', 'funding',
+    'capital', 'raise', 'venture', 'angel', 'seed',
+    'pitch', 'term sheet', 'equity', 'shareholder',
+    'due diligence', 'valuation',
+  ]
+  if (investorKeywords.some(k => sub.includes(k))) {
+    return { category: 'investor', needsReview: false }
+  }
 
-  const collabKeywords = ['influencer', 'content creator', 'ugc', 'tiktok collab', 'instagram collab', 'creator partnership', 'user generated', 'brand ambassador']
-  if (collabKeywords.some(k => text.includes(k))) return 'collab'
+  // ── ADVERTISER ───────────────────────────────────────────────────────────
+  const advertiserKeywords = [
+    'advertise', 'advertising', 'advertisement',
+    'sponsor', 'sponsorship', 'ad campaign', 'ad space',
+    'listing', 'featured', 'promotion', 'paid partnership',
+    'rate card', 'media kit', 'cpm', 'cpc',
+  ]
+  if (advertiserKeywords.some(k => sub.includes(k))) {
+    return { category: 'advertiser', needsReview: false }
+  }
 
-  const advertiserKeywords = ['advertise', 'advertising', 'sponsor', 'sponsorship', 'partner with', 'feature our', 'promote', 'ad campaign', 'brand deal', 'listing opportunity', 'media kit']
-  if (advertiserKeywords.some(k => text.includes(k))) return 'advertiser'
+  // ── COLLAB ───────────────────────────────────────────────────────────────
+  const collabKeywords = [
+    'collab', 'collaborate', 'collaboration',
+    'partnership', 'content creator', 'influencer',
+    'tiktok', 'instagram', 'social media', 'feature',
+    'cross promote', 'shoutout', 'ambassador', 'creator', 'ugc',
+  ]
+  if (collabKeywords.some(k => sub.includes(k))) {
+    return { category: 'collab', needsReview: false }
+  }
 
-  return null
+  // ── OUTREACH (default) — flag if subject contains urgency words ───────────
+  const reviewKeywords = [
+    'urgent', 'important', 'action required', 'response needed', 'follow up',
+  ]
+  const needsReview = reviewKeywords.some(k => sub.includes(k))
+  return { category: 'outreach', needsReview }
 }
 
 // ---------------------------------------------------------------------------
 // Cloud Functions
 // ---------------------------------------------------------------------------
 
-exports.syncEmails = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }, async (request) => {
+exports.syncEmails = onCall({ cors: true, invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
   const { gmailToken } = request.data
@@ -272,58 +324,38 @@ exports.syncEmails = onCall({ secrets: [anthropicKey], cors: true, invoker: 'pub
 
   if (!newMessages.length) return { synced: 0 }
 
-  const apiKey = anthropicKey.value()
+  // Rules-only categorisation — no AI, fast and free
+  const toSave = newMessages.map(msg => {
+    const headers = msg.payload?.headers || []
+    const from    = extractHeader(headers, 'From')
+    const subject = extractHeader(headers, 'Subject')
+    const date    = extractHeader(headers, 'Date')
+    const snippet = msg.snippet || ''
+    const isUnread = (msg.labelIds || []).includes('UNREAD')
 
-  // Process with AI in batches of 5
-  const toSave = []
-  for (let i = 0; i < newMessages.length; i += 5) {
-    const batch = await Promise.all(
-      newMessages.slice(i, i + 5).map(async msg => {
-        const headers = msg.payload?.headers || []
-        const from = extractHeader(headers, 'From')
-        const subject = extractHeader(headers, 'Subject')
-        const date = extractHeader(headers, 'Date')
-        const snippet = msg.snippet || ''
-        const isUnread = (msg.labelIds || []).includes('UNREAD')
+    const fromMatch = from.match(/^"?([^"<]*)"?\s*<?([^>]*)>?$/)
+    const fromName  = fromMatch ? fromMatch[1].trim() : ''
+    const fromEmail = fromMatch ? (fromMatch[2].trim() || from) : from
 
-        const fromMatch = from.match(/^"?([^"<]*)"?\s*<?([^>]*)>?$/)
-        const fromName = fromMatch ? fromMatch[1].trim() : ''
-        const fromEmail = fromMatch ? (fromMatch[2].trim() || from) : from
+    const { category, needsReview } = ruleBasedCategory(fromEmail, subject)
+    const parsedDate = date ? new Date(date).toISOString() : new Date().toISOString()
 
-        const ruleCategory = ruleBasedCategory(fromEmail, subject, snippet)
-        let category = 'outreach', ai_summary = ''
-        if (ruleCategory) {
-          category = ruleCategory
-        } else {
-          try {
-            const ai = await categorizeAndSummarize(apiKey, { from, subject, snippet })
-            category = ai.category
-            ai_summary = ai.summary
-          } catch (e) {
-            console.error('AI categorize error:', e.message)
-          }
-        }
-
-        const parsedDate = date ? new Date(date).toISOString() : new Date().toISOString()
-
-        return {
-          gmail_id: msg.id,
-          thread_id: msg.threadId || null,
-          from_email: fromEmail,
-          from_name: fromName,
-          subject,
-          snippet,
-          full_body: null,
-          date: parsedDate,
-          category,
-          is_read: isUnread ? 0 : 1,
-          ai_summary,
-          created_at: new Date().toISOString(),
-        }
-      })
-    )
-    toSave.push(...batch)
-  }
+    return {
+      gmail_id: msg.id,
+      thread_id: msg.threadId || null,
+      from_email: fromEmail,
+      from_name: fromName,
+      subject,
+      snippet,
+      full_body: null,
+      date: parsedDate,
+      category,
+      needs_review: needsReview,
+      is_read: isUnread ? 0 : 1,
+      ai_summary: '',
+      created_at: new Date().toISOString(),
+    }
+  })
 
   // Batch write to Firestore (max 500 per batch)
   const batchWrite = db.batch()
@@ -496,7 +528,7 @@ stageIndex is 0-based. Pick the most likely current stage.`
   }
 })
 
-exports.recategorizeEmails = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }, async (request) => {
+exports.recategorizeEmails = onCall({ cors: true, invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const uid = request.auth.uid
 
@@ -504,14 +536,15 @@ exports.recategorizeEmails = onCall({ secrets: [anthropicKey], cors: true, invok
   const snapshot = await emailsRef.get()
   if (snapshot.empty) return { updated: 0 }
 
+  // Re-run rules on every email and update category + needs_review
   const batchWrite = db.batch()
   let updated = 0
 
-  for (const doc of snapshot.docs) {
-    const email = doc.data()
-    const newCategory = ruleBasedCategory(email.from_email, email.subject, email.snippet)
-    if (newCategory && newCategory !== email.category) {
-      batchWrite.update(doc.ref, { category: newCategory })
+  for (const docSnap of snapshot.docs) {
+    const email = docSnap.data()
+    const { category, needsReview } = ruleBasedCategory(email.from_email, email.subject)
+    if (category !== email.category || needsReview !== email.needs_review) {
+      batchWrite.update(docSnap.ref, { category, needs_review: needsReview })
       updated++
     }
   }
