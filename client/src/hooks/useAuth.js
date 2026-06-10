@@ -1,32 +1,45 @@
 import { useState, useEffect } from 'react'
-import { api } from '../utils/api'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { auth } from '../firebase'
+
+const GMAIL_TOKEN_KEY = 'gmail_access_token'
+const GMAIL_EXPIRY_KEY = 'gmail_token_expiry'
 
 export function useAuth() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token')
-    if (!token) {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // Check if the Gmail token has expired
+        const expiry = localStorage.getItem(GMAIL_EXPIRY_KEY)
+        if (expiry && Date.now() > parseInt(expiry)) {
+          // Token expired — sign out so the user re-authenticates and gets a fresh Gmail token
+          await signOut(auth)
+          localStorage.removeItem(GMAIL_TOKEN_KEY)
+          localStorage.removeItem(GMAIL_EXPIRY_KEY)
+          setUser(null)
+        } else {
+          setUser({
+            email: firebaseUser.email,
+            name: firebaseUser.displayName,
+            picture: firebaseUser.photoURL,
+            uid: firebaseUser.uid,
+          })
+        }
+      } else {
+        setUser(null)
+      }
       setLoading(false)
-      return
-    }
-
-    api.get('/auth/me')
-      .then((data) => {
-        setUser(data)
-        setLoading(false)
-      })
-      .catch(() => {
-        localStorage.removeItem('auth_token')
-        setLoading(false)
-      })
+    })
+    return unsubscribe
   }, [])
 
   const logout = async () => {
-    await api.post('/auth/logout').catch(() => {})
-    localStorage.removeItem('auth_token')
-    setUser(null)
+    await signOut(auth)
+    localStorage.removeItem(GMAIL_TOKEN_KEY)
+    localStorage.removeItem(GMAIL_EXPIRY_KEY)
     window.location.href = '/'
   }
 
