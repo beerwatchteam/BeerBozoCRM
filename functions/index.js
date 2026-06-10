@@ -194,7 +194,7 @@ exports.syncEmails = onCall({ secrets: [anthropicKey], cors: true, invoker: 'pub
   const { gmailToken } = request.data
   if (!gmailToken) throw new HttpsError('invalid-argument', 'gmailToken is required')
 
-  const messages = await listMessages(gmailToken, { maxResults: 50, query: 'in:inbox' })
+  const messages = await listMessages(gmailToken, { maxResults: 200, query: 'in:inbox' })
   if (!messages.length) return { synced: 0 }
 
   // Fetch metadata in batches of 10
@@ -241,6 +241,8 @@ exports.syncEmails = onCall({ secrets: [anthropicKey], cors: true, invoker: 'pub
           console.error('AI categorize error:', e.message)
         }
 
+        const parsedDate = date ? new Date(date).toISOString() : new Date().toISOString()
+
         return {
           gmail_id: msg.id,
           thread_id: msg.threadId || null,
@@ -249,7 +251,7 @@ exports.syncEmails = onCall({ secrets: [anthropicKey], cors: true, invoker: 'pub
           subject,
           snippet,
           full_body: null,
-          date: date || new Date().toISOString(),
+          date: parsedDate,
           category,
           is_read: isUnread ? 0 : 1,
           ai_summary,

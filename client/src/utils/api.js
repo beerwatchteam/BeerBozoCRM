@@ -42,7 +42,7 @@ async function routeGet(path) {
       query(
         collection(db, `users/${uid}/emails`),
         orderBy('date', 'desc'),
-        limit(100)
+        limit(200)
       )
     )
     return snap.docs.map(d => ({ ...d.data(), id: d.id }))
