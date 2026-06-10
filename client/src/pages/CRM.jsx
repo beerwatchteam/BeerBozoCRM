@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '../utils/api'
+import { useAuth } from '../hooks/useAuth'
 import StatsCards from '../components/StatsCards'
 import EmailList from '../components/EmailList'
 import EmailDetail from '../components/EmailDetail'
@@ -7,12 +8,15 @@ import EmailDetail from '../components/EmailDetail'
 const SYNC_INTERVAL_MS = 60 * 1000 // 60 seconds
 
 export default function CRM() {
+  const { gmailConnected, connectGmail } = useAuth()
   const [emails, setEmails] = useState([])
   const [stats, setStats] = useState(null)
   const [selectedEmail, setSelectedEmail] = useState(null)
   const [filter, setFilter] = useState('all')
   const [syncing, setSyncing] = useState(false)
   const [lastSyncedAt, setLastSyncedAt] = useState(null)
+  const [syncError, setSyncError] = useState('')
+  const [connecting, setConnecting] = useState(false)
 
   const loadEmails = useCallback(async () => {
     try {
@@ -33,32 +37,49 @@ export default function CRM() {
   }, [])
 
   const syncEmails = useCallback(async (silent = false) => {
+    if (!gmailConnected) return
     if (!silent) setSyncing(true)
+    setSyncError('')
     try {
       await api.post('/api/emails/sync')
       await Promise.all([loadEmails(), loadStats()])
       setLastSyncedAt(new Date())
     } catch (err) {
       console.error('Sync error:', err)
+      if (!silent) setSyncError(err.message || 'Sync failed')
     } finally {
       if (!silent) setSyncing(false)
     }
-  }, [loadEmails, loadStats])
+  }, [gmailConnected, loadEmails, loadStats])
 
-  // On mount: load from DB first (fast), then sync from Gmail
+  // On mount: load from Firestore first, then sync from Gmail
   useEffect(() => {
     const init = async () => {
       await Promise.all([loadEmails(), loadStats()])
-      await syncEmails(true)
+      if (gmailConnected) await syncEmails(true)
     }
     init()
-  }, [])
+  }, [gmailConnected])
 
   // Auto-refresh every 60 seconds
   useEffect(() => {
+    if (!gmailConnected) return
     const interval = setInterval(() => syncEmails(true), SYNC_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [syncEmails])
+  }, [gmailConnected, syncEmails])
+
+  async function handleConnectGmail() {
+    setConnecting(true)
+    try {
+      await connectGmail()
+    } catch (err) {
+      if (err.code !== 'auth/popup-closed-by-user') {
+        console.error('Gmail connect error:', err)
+      }
+    } finally {
+      setConnecting(false)
+    }
+  }
 
   function handleSelectEmail(email) {
     setSelectedEmail(email)
@@ -75,21 +96,48 @@ export default function CRM() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Gmail not connected banner */}
+      {!gmailConnected && (
+        <div className="shrink-0 bg-amber-50 border-b border-amber-200 px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-amber-800">
+            <span>📭</span>
+            <span>Gmail is not connected — your inbox won't load until you authorise access.</span>
+          </div>
+          <button
+            onClick={handleConnectGmail}
+            disabled={connecting}
+            className="flex items-center gap-2 text-sm font-medium text-white bg-bb-green hover:bg-bb-green/90 px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {connecting && (
+              <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
+            )}
+            {connecting ? 'Connecting...' : 'Connect Gmail'}
+          </button>
+        </div>
+      )}
+
       {/* Stats + toolbar */}
       <div className="shrink-0 bg-white border-b border-bb-border">
         <StatsCards stats={stats} />
         <div className="px-6 pb-3 flex items-center justify-between">
           <span className="text-xs text-gray-400">
-            {lastSyncedAt
-              ? `Last synced ${lastSyncedAt.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}`
-              : 'Syncing...'}
+            {!gmailConnected
+              ? 'Gmail not connected'
+              : lastSyncedAt
+                ? `Last synced ${lastSyncedAt.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}`
+                : 'Syncing...'}
           </span>
-          {syncing && (
-            <div className="flex items-center gap-1.5 text-xs text-bb-green">
-              <div className="w-3 h-3 border border-bb-green border-t-transparent rounded-full animate-spin" />
-              Syncing inbox...
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {syncError && (
+              <span className="text-xs text-red-500">{syncError}</span>
+            )}
+            {syncing && (
+              <div className="flex items-center gap-1.5 text-xs text-bb-green">
+                <div className="w-3 h-3 border border-bb-green border-t-transparent rounded-full animate-spin" />
+                Syncing inbox...
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
