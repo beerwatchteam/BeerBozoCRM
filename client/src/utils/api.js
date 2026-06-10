@@ -105,9 +105,24 @@ async function routePost(path, body) {
     return invoke('sendEmail', { gmailToken, ...body })
   }
 
+  // POST /api/emails/recategorize
+  if (path === '/api/emails/recategorize') {
+    return invoke('recategorizeEmails', {})
+  }
+
   // POST /api/ai/draft-reply
   if (path === '/api/ai/draft-reply') {
     return invoke('draftReply', body)
+  }
+
+  // POST /api/ai/suggest-next-action
+  if (path === '/api/ai/suggest-next-action') {
+    return invoke('suggestNextAction', body)
+  }
+
+  // POST /api/ai/suggest-task-stages
+  if (path === '/api/ai/suggest-task-stages') {
+    return invoke('suggestTaskStages', body)
   }
 
   // POST /api/chat/:personaId

@@ -17,6 +17,7 @@ export default function CRM() {
   const [lastSyncedAt, setLastSyncedAt] = useState(null)
   const [syncError, setSyncError] = useState('')
   const [connecting, setConnecting] = useState(false)
+  const [recategorizing, setRecategorizing] = useState(false)
 
   const loadEmails = useCallback(async () => {
     try {
@@ -67,6 +68,18 @@ export default function CRM() {
     const interval = setInterval(() => syncEmails(true), SYNC_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [gmailConnected, syncEmails])
+
+  async function handleRecategorize() {
+    setRecategorizing(true)
+    try {
+      const result = await api.post('/api/emails/recategorize')
+      if (result.updated > 0) await loadEmails()
+    } catch (err) {
+      console.error('Recategorize error:', err)
+    } finally {
+      setRecategorizing(false)
+    }
+  }
 
   async function handleConnectGmail() {
     setConnecting(true)
@@ -137,6 +150,16 @@ export default function CRM() {
                 Syncing inbox...
               </div>
             )}
+            <button
+              onClick={handleRecategorize}
+              disabled={recategorizing}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-bb-green border border-gray-200 rounded px-2 py-1 transition-colors disabled:opacity-50"
+            >
+              {recategorizing && (
+                <div className="w-3 h-3 border border-bb-green border-t-transparent rounded-full animate-spin" />
+              )}
+              {recategorizing ? 'Recategorizing...' : 'Recategorize Emails'}
+            </button>
           </div>
         </div>
       </div>

@@ -185,6 +185,47 @@ const PERSONA_PROMPTS = {
 }
 
 // ---------------------------------------------------------------------------
+// Rule-based categorisation + Advertiser stages
+// ---------------------------------------------------------------------------
+
+const ADVERTISER_STAGES = [
+  'Initial Contact',
+  'Awaiting Response',
+  'Deal Discussion',
+  'Deal Agreed',
+  'Awaiting Assets',
+  'Invoice Sent / Awaiting Payment',
+  'Live & Active',
+  'Completed',
+]
+
+function ruleBasedCategory(fromEmail, subject, snippet) {
+  const from = (fromEmail || '').toLowerCase()
+  const sub = (subject || '').toLowerCase()
+  const body = (snippet || '').toLowerCase()
+  const text = sub + ' ' + body
+
+  const financialDomains = ['@google.com', '@apple.com', '@xero.com', '@ato.gov.au', '@stripe.com', '@paypal.com', '@quickbooks']
+  const financialKeywords = ['billing', 'invoice', 'payment received', 'receipt', 'subscription', 'tax invoice', 'admob revenue', 'xero', 'gst', 'payout', 'ato notice', 'app store payment', 'itunes connect']
+  if (financialDomains.some(d => from.includes(d)) || financialKeywords.some(k => text.includes(k))) return 'financial'
+
+  const platformDomains = ['@github.com', '@cloudflare.com', 'noreply@md.gitter.im']
+  const platformKeywords = ['app store', 'google play', 'admob', 'firebase', 'cloudflare', 'github', 'testflight', 'app review', 'ready for sale', 'app has been', 'developer account', 'play console', 'app store connect']
+  if (platformDomains.some(d => from.includes(d)) || platformKeywords.some(k => text.includes(k))) return 'platform'
+
+  const investorKeywords = ['invest', 'funding', 'venture', 'angel investor', 'seed round', 'pitch deck', 'term sheet', 'raise capital', 'shareholder', 'due diligence', 'cap table']
+  if (investorKeywords.some(k => text.includes(k))) return 'investor'
+
+  const collabKeywords = ['influencer', 'content creator', 'ugc', 'tiktok collab', 'instagram collab', 'creator partnership', 'user generated', 'brand ambassador']
+  if (collabKeywords.some(k => text.includes(k))) return 'collab'
+
+  const advertiserKeywords = ['advertise', 'advertising', 'sponsor', 'sponsorship', 'partner with', 'feature our', 'promote', 'ad campaign', 'brand deal', 'listing opportunity', 'media kit']
+  if (advertiserKeywords.some(k => text.includes(k))) return 'advertiser'
+
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // Cloud Functions
 // ---------------------------------------------------------------------------
 
@@ -232,13 +273,18 @@ exports.syncEmails = onCall({ secrets: [anthropicKey], cors: true, invoker: 'pub
         const fromName = fromMatch ? fromMatch[1].trim() : ''
         const fromEmail = fromMatch ? (fromMatch[2].trim() || from) : from
 
+        const ruleCategory = ruleBasedCategory(fromEmail, subject, snippet)
         let category = 'outreach', ai_summary = ''
-        try {
-          const ai = await categorizeAndSummarize(apiKey, { from, subject, snippet })
-          category = ai.category
-          ai_summary = ai.summary
-        } catch (e) {
-          console.error('AI categorize error:', e.message)
+        if (ruleCategory) {
+          category = ruleCategory
+        } else {
+          try {
+            const ai = await categorizeAndSummarize(apiKey, { from, subject, snippet })
+            category = ai.category
+            ai_summary = ai.summary
+          } catch (e) {
+            console.error('AI categorize error:', e.message)
+          }
         }
 
         const parsedDate = date ? new Date(date).toISOString() : new Date().toISOString()
@@ -388,4 +434,83 @@ exports.chat = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }
   })
 
   return { reply }
+})
+
+exports.recategorizeEmails = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
+  const uid = request.auth.uid
+
+  const emailsRef = db.collection(`users/${uid}/emails`)
+  const snapshot = await emailsRef.get()
+  if (snapshot.empty) return { updated: 0 }
+
+  const batchWrite = db.batch()
+  let updated = 0
+
+  for (const doc of snapshot.docs) {
+    const email = doc.data()
+    const newCategory = ruleBasedCategory(email.from_email, email.subject, email.snippet)
+    if (newCategory && newCategory !== email.category) {
+      batchWrite.update(doc.ref, { category: newCategory })
+      updated++
+    }
+  }
+
+  if (updated > 0) await batchWrite.commit()
+  return { updated }
+})
+
+exports.suggestNextAction = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
+  const { clientName, stage, notes, recentEmailSnippets } = request.data
+  if (!clientName) throw new HttpsError('invalid-argument', 'clientName is required')
+
+  const apiKey = anthropicKey.value()
+
+  const prompt = `You are a business advisor for BeerBozo — an Australian app showing cheapest drink prices at pubs and bars.
+
+Suggest the single most important next action for this advertiser/partner relationship.
+
+Client: ${clientName}
+Pipeline stage: ${stage || 'Unknown'}
+Notes: ${notes || 'None'}
+Recent email context: ${(recentEmailSnippets || []).join('\n').slice(0, 800) || 'None'}
+
+Return ONLY a short action sentence (max 20 words). No preamble, no explanation.`
+
+  const suggestion = await callClaude(apiKey, {
+    maxTokens: 64,
+    messages: [{ role: 'user', content: prompt }],
+  })
+
+  return { suggestion: suggestion.trim() }
+})
+
+exports.suggestTaskStages = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
+  const { taskName, description } = request.data
+  if (!taskName) throw new HttpsError('invalid-argument', 'taskName is required')
+
+  const apiKey = anthropicKey.value()
+
+  const prompt = `You are helping organise work for BeerBozo — an Australian app showing cheapest drink prices at pubs and bars.
+
+Suggest 3-6 stages for this task as a simple pipeline (like a kanban board).
+
+Task: ${taskName}
+Description: ${description || ''}
+
+Return ONLY a JSON array of short stage name strings (max 4 words each). No preamble, no explanation. Example: ["Research", "Draft", "Review", "Done"]`
+
+  try {
+    const text = await callClaude(apiKey, {
+      maxTokens: 128,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    const stages = JSON.parse(text)
+    if (!Array.isArray(stages)) throw new Error('Not an array')
+    return { stages: stages.slice(0, 8) }
+  } catch {
+    return { stages: ['To Do', 'In Progress', 'Done'] }
+  }
 })

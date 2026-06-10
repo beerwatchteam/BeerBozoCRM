@@ -13,26 +13,25 @@ export default function Layout({ user, logout, activeTab, children }) {
 
         {/* Tabs */}
         <nav className="flex items-center gap-1">
-          <Link
-            to="/crm"
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'crm'
-                ? 'bg-bb-light text-bb-green'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            CRM
-          </Link>
-          <Link
-            to="/internal"
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'internal'
-                ? 'bg-bb-light text-bb-green'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            Internal
-          </Link>
+          {[
+            { id: 'crm', label: 'Inbox', to: '/crm' },
+            { id: 'clients', label: 'Clients', to: '/clients' },
+            { id: 'tasks', label: 'Tasks', to: '/tasks' },
+            { id: 'calendar', label: 'Calendar', to: '/calendar' },
+            { id: 'internal', label: 'Internal', to: '/internal' },
+          ].map(tab => (
+            <Link
+              key={tab.id}
+              to={tab.to}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-bb-light text-bb-green'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {tab.label}
+            </Link>
+          ))}
         </nav>
 
         {/* User + logout */}

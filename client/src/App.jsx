@@ -3,6 +3,9 @@ import { useAuth } from './hooks/useAuth'
 import Login from './pages/Login'
 import CRM from './pages/CRM'
 import Internal from './pages/Internal'
+import Clients from './pages/Clients'
+import Tasks from './pages/Tasks'
+import ContentCalendar from './pages/ContentCalendar'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ user, loading, children }) {
@@ -30,6 +33,39 @@ export default function App() {
           <ProtectedRoute user={user} loading={loading}>
             <Layout user={user} logout={logout} activeTab="crm">
               <CRM />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/clients"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <Layout user={user} logout={logout} activeTab="clients">
+              <Clients />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/tasks"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <Layout user={user} logout={logout} activeTab="tasks">
+              <Tasks />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/calendar"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <Layout user={user} logout={logout} activeTab="calendar">
+              <ContentCalendar />
             </Layout>
           </ProtectedRoute>
         }
