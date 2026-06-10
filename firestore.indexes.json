@@ -1,13 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "emails",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "date", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "chatMessages",
       "queryScope": "COLLECTION",
       "fields": [
