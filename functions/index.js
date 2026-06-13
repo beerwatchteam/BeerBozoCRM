@@ -122,7 +122,7 @@ function stripHtml(html) {
 // Anthropic helpers
 // ---------------------------------------------------------------------------
 
-const MODEL = 'claude-sonnet-4-20250514'
+const MODEL = 'claude-sonnet-4-5'
 const CATEGORIES = ['collab', 'investor', 'advertiser', 'platform', 'financial', 'outreach']
 
 async function callClaude(apiKey, { system, messages, maxTokens = 512 }) {

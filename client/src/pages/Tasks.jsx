@@ -4,7 +4,6 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { api } from '../utils/api'
-import WorkflowTimeline from '../components/WorkflowTimeline'
 import { PlusIcon, SparklesIcon, TrashIcon, CheckIcon } from '../components/Icons'
 
 // ---------------------------------------------------------------------------
@@ -16,16 +15,15 @@ function CreateTaskModal({ onClose, onSave }) {
   const [description, setDescription] = useState('')
   const [stages, setStages]         = useState([])
   const [stageInput, setStageInput] = useState('')
-  const [aiContext, setAiContext]    = useState('')
   const [aiLoading, setAiLoading]   = useState(false)
   const [saving, setSaving]         = useState(false)
 
   async function handleAISuggest() {
-    if (!title.trim() && !aiContext.trim()) return
+    if (!title.trim()) return
     setAiLoading(true)
     try {
       const result = await api.post('/api/ai/suggest-task-stages', {
-        taskName: title || aiContext,
+        taskName: title,
         description,
       })
       setStages(result.stages || [])
@@ -97,7 +95,6 @@ function CreateTaskModal({ onClose, onSave }) {
             />
           </div>
 
-          {/* Stages */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -106,7 +103,7 @@ function CreateTaskModal({ onClose, onSave }) {
               <button
                 type="button"
                 onClick={handleAISuggest}
-                disabled={aiLoading || (!title.trim())}
+                disabled={aiLoading || !title.trim()}
                 className="flex items-center gap-1.5 text-xs font-medium text-bb-green hover:text-bb-green-dark transition-colors disabled:opacity-40"
               >
                 <SparklesIcon className="w-3.5 h-3.5" />
@@ -114,7 +111,6 @@ function CreateTaskModal({ onClose, onSave }) {
               </button>
             </div>
 
-            {/* Stage list */}
             {stages.length > 0 && (
               <div className="space-y-1 mb-2">
                 {stages.map((stage, i) => (
@@ -135,7 +131,6 @@ function CreateTaskModal({ onClose, onSave }) {
               </div>
             )}
 
-            {/* Add stage input */}
             <div className="flex gap-2">
               <input
                 value={stageInput}
@@ -168,231 +163,144 @@ function CreateTaskModal({ onClose, onSave }) {
 }
 
 // ---------------------------------------------------------------------------
-// Task Detail (right pane)
+// Accordion Task Card
 // ---------------------------------------------------------------------------
 
-function TaskDetail({ task, onUpdate, onDelete }) {
-  const [editingTitle, setEditingTitle]       = useState(false)
-  const [titleValue, setTitleValue]           = useState(task.title)
-  const [editingDesc, setEditingDesc]         = useState(false)
-  const [descValue, setDescValue]             = useState(task.description || '')
-  const [saving, setSaving]                   = useState(false)
+function TaskAccordion({ task, onUpdate, onDelete }) {
+  const [expanded, setExpanded] = useState(false)
+  const [toggling, setToggling] = useState(null)
 
-  useEffect(() => {
-    setTitleValue(task.title)
-    setDescValue(task.description || '')
-    setEditingTitle(false)
-    setEditingDesc(false)
-  }, [task.id])
+  const stages = task.stages || []
+  const completedCount = stages.filter(s => s.completedAt).length
+  const total = stages.length
+  const isComplete = total > 0 && completedCount >= total
+  const pct = total ? Math.round((completedCount / total) * 100) : 0
 
-  const isComplete = task.activeStageIndex >= (task.stages?.length || 0)
-  const progress = task.stages?.length
-    ? `${Math.min(task.activeStageIndex, task.stages.length)} / ${task.stages.length}`
-    : 'No stages'
-
-  async function saveTitle() {
-    if (!titleValue.trim() || titleValue === task.title) {
-      setEditingTitle(false)
-      setTitleValue(task.title)
-      return
-    }
-    setSaving(true)
-    const updated = { ...task, title: titleValue.trim() }
-    await updateDoc(doc(db, 'tasks', task.id), { title: titleValue.trim(), updated_at: new Date().toISOString() })
-    onUpdate(updated)
-    setSaving(false)
-    setEditingTitle(false)
-  }
-
-  async function saveDesc() {
-    const updated = { ...task, description: descValue }
-    await updateDoc(doc(db, 'tasks', task.id), { description: descValue, updated_at: new Date().toISOString() })
-    onUpdate(updated)
-    setEditingDesc(false)
-  }
-
-  async function handleAdvance() {
-    const newIndex = task.activeStageIndex + 1
-    const newStages = task.stages.map((s, i) =>
-      i === task.activeStageIndex ? { ...s, completedAt: new Date().toISOString() } : s
+  async function toggleStage(index) {
+    if (toggling !== null) return
+    setToggling(index)
+    const stage = stages[index]
+    const newCompletedAt = stage.completedAt ? null : new Date().toISOString()
+    const newStages = stages.map((s, i) =>
+      i === index ? { ...s, completedAt: newCompletedAt } : s
     )
-    const updated = { ...task, stages: newStages, activeStageIndex: newIndex }
+    const newCompleteCount = newStages.filter(s => s.completedAt).length
+    const updated = { ...task, stages: newStages, activeStageIndex: newCompleteCount }
     await updateDoc(doc(db, 'tasks', task.id), {
       stages: newStages,
-      activeStageIndex: newIndex,
+      activeStageIndex: newCompleteCount,
       updated_at: new Date().toISOString(),
     })
     onUpdate(updated)
+    setToggling(null)
   }
 
-  async function handleUpdateNotes(index, notes) {
-    const newStages = task.stages.map((s, i) => i === index ? { ...s, notes } : s)
-    const updated = { ...task, stages: newStages }
-    await updateDoc(doc(db, 'tasks', task.id), { stages: newStages, updated_at: new Date().toISOString() })
-    onUpdate(updated)
-  }
-
-  const stageData = {}
-  task.stages?.forEach((s, i) => {
-    stageData[i] = { notes: s.notes, completedAt: s.completedAt }
-  })
-
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Task header */}
-      <div className="px-6 py-5 border-b border-bb-border bg-white shrink-0">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            {editingTitle ? (
-              <input
-                autoFocus
-                value={titleValue}
-                onChange={e => setTitleValue(e.target.value)}
-                onBlur={saveTitle}
-                onKeyDown={e => e.key === 'Enter' && saveTitle()}
-                className="input text-lg font-semibold"
-              />
-            ) : (
-              <h2
-                onClick={() => setEditingTitle(true)}
-                className="text-lg font-semibold text-gray-900 cursor-text hover:text-bb-green transition-colors"
-              >
-                {task.title}
-              </h2>
-            )}
-
-            <div className="flex items-center gap-3 mt-1">
-              <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${
-                isComplete
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : task.stages?.length === 0
-                    ? 'bg-gray-100 text-gray-500'
-                    : 'bg-bb-green-light text-bb-green'
-              }`}>
-                {isComplete ? (
-                  <><CheckIcon className="w-3 h-3" /> Complete</>
-                ) : (
-                  <>Stage {task.stages?.length ? `${task.activeStageIndex + 1} of ${task.stages.length}` : '–'}</>
-                )}
-              </span>
-              <span className="text-xs text-gray-400">
-                Created {new Date(task.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={() => onDelete(task.id)}
-            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-          >
-            <TrashIcon className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Description */}
-        <div className="mt-3">
-          {editingDesc ? (
-            <div className="space-y-2">
-              <textarea
-                autoFocus
-                value={descValue}
-                onChange={e => setDescValue(e.target.value)}
-                rows={3}
-                placeholder="Describe this task..."
-                className="input resize-none text-sm"
-              />
-              <div className="flex gap-2">
-                <button onClick={saveDesc} className="btn-primary text-xs px-3 py-1.5">Save</button>
-                <button onClick={() => { setEditingDesc(false); setDescValue(task.description || '') }} className="btn-secondary text-xs px-3 py-1.5">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <p
-              onClick={() => setEditingDesc(true)}
-              className={`text-sm cursor-text rounded-lg px-1 -mx-1 hover:bg-bb-light transition-colors ${task.description ? 'text-gray-600' : 'text-gray-400'}`}
-            >
-              {task.description || 'Click to add description...'}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Timeline */}
-      <div className="flex-1 overflow-y-auto px-6 py-5">
-        {!task.stages?.length ? (
-          <div className="text-center py-12 text-gray-400">
-            <div className="text-3xl mb-2">📋</div>
-            <p className="text-sm">No stages yet.</p>
-            <p className="text-xs mt-1">Edit this task to add stages.</p>
-          </div>
-        ) : (
-          <WorkflowTimeline
-            stageNames={task.stages.map(s => s.name)}
-            activeIndex={task.activeStageIndex}
-            stageData={stageData}
-            onAdvance={handleAdvance}
-            onUpdateNotes={handleUpdateNotes}
-          />
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Task card (in list)
-// ---------------------------------------------------------------------------
-
-function TaskCard({ task, selected, onSelect }) {
-  const stages = task.stages || []
-  const done   = Math.min(task.activeStageIndex, stages.length)
-  const total  = stages.length
-  const pct    = total ? Math.round((done / total) * 100) : 0
-  const isComplete = done >= total && total > 0
-
-  return (
-    <button
-      onClick={() => onSelect(task)}
-      className={`w-full text-left p-4 rounded-xl border transition-all ${
-        selected
-          ? 'border-bb-green bg-white shadow-card-md ring-1 ring-bb-green/20'
-          : 'border-bb-border bg-white hover:border-gray-300 hover:shadow-card'
-      }`}
-    >
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <h3 className={`text-sm font-semibold leading-tight flex-1 ${selected ? 'text-bb-green' : 'text-gray-900'}`}>
-          {task.title}
-        </h3>
-        <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${
-          isComplete
-            ? 'bg-emerald-100 text-emerald-700'
-            : total === 0
-              ? 'bg-gray-100 text-gray-500'
-              : 'bg-bb-green-light text-bb-green'
-        }`}>
-          {isComplete ? 'Done' : total === 0 ? 'No stages' : `${done}/${total}`}
+    <div className={`bg-white rounded-xl border transition-all ${
+      isComplete ? 'border-emerald-200' : 'border-bb-border'
+    } shadow-sm`}>
+      {/* Header row — always visible */}
+      <button
+        onClick={() => setExpanded(p => !p)}
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
+      >
+        {/* Expand chevron */}
+        <span className={`text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
         </span>
-      </div>
 
-      {task.description && (
-        <p className="text-xs text-gray-500 truncate mb-2">{task.description}</p>
-      )}
+        {/* Title */}
+        <span className={`flex-1 text-sm font-semibold truncate ${isComplete ? 'text-emerald-700 line-through decoration-emerald-400' : 'text-gray-900'}`}>
+          {task.title}
+        </span>
 
+        {/* Progress badge */}
+        {total > 0 && (
+          <span className={`shrink-0 text-xs font-medium px-2.5 py-0.5 rounded-full ${
+            isComplete
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-bb-green-light text-bb-green'
+          }`}>
+            {isComplete ? 'Done' : `${completedCount}/${total}`}
+          </span>
+        )}
+
+        {/* Delete */}
+        <span
+          role="button"
+          onClick={e => { e.stopPropagation(); onDelete(task.id) }}
+          className="shrink-0 p-1 text-gray-300 hover:text-red-500 transition-colors rounded"
+        >
+          <TrashIcon className="w-3.5 h-3.5" />
+        </span>
+      </button>
+
+      {/* Progress bar */}
       {total > 0 && (
-        <div>
-          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div className="px-4 pb-0">
+          <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${isComplete ? 'bg-emerald-400' : 'bg-bb-green'}`}
+              className={`h-full rounded-full transition-all duration-300 ${isComplete ? 'bg-emerald-400' : 'bg-bb-green'}`}
               style={{ width: `${pct}%` }}
             />
           </div>
-          {!isComplete && stages[task.activeStageIndex] && (
-            <p className="text-xs text-gray-400 mt-1.5 truncate">
-              Current: {stages[task.activeStageIndex].name}
-            </p>
+        </div>
+      )}
+
+      {/* Expanded content */}
+      {expanded && (
+        <div className="px-4 pb-4 pt-3">
+          {task.description && (
+            <p className="text-xs text-gray-500 mb-4 pl-5">{task.description}</p>
+          )}
+
+          {stages.length === 0 ? (
+            <p className="text-xs text-gray-400 pl-5 py-2">No stages added.</p>
+          ) : (
+            <div className="space-y-1 pl-2">
+              {stages.map((stage, i) => {
+                const done = !!stage.completedAt
+                return (
+                  <button
+                    key={i}
+                    onClick={() => toggleStage(i)}
+                    disabled={toggling !== null}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all ${
+                      done
+                        ? 'bg-emerald-50 border-emerald-200 opacity-75'
+                        : 'bg-bb-light border-bb-border hover:border-bb-green hover:bg-bb-green-light'
+                    } ${toggling === i ? 'opacity-50' : ''}`}
+                  >
+                    {/* Checkbox */}
+                    <span className={`shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                      done
+                        ? 'bg-emerald-500 border-emerald-500'
+                        : 'border-gray-300 bg-white'
+                    }`}>
+                      {done && <CheckIcon className="w-3 h-3 text-white" />}
+                    </span>
+
+                    {/* Stage name */}
+                    <span className={`flex-1 text-sm ${done ? 'text-emerald-700 line-through decoration-emerald-400' : 'text-gray-800 font-medium'}`}>
+                      {stage.name}
+                    </span>
+
+                    {/* Completed date */}
+                    {done && stage.completedAt && (
+                      <span className="text-xs text-emerald-600 shrink-0">
+                        {new Date(stage.completedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
           )}
         </div>
       )}
-    </button>
+    </div>
   )
 }
 
@@ -401,10 +309,9 @@ function TaskCard({ task, selected, onSelect }) {
 // ---------------------------------------------------------------------------
 
 export default function Tasks() {
-  const [tasks, setTasks]               = useState([])
-  const [loading, setLoading]           = useState(true)
-  const [selected, setSelected]         = useState(null)
-  const [showCreate, setShowCreate]     = useState(false)
+  const [tasks, setTasks]           = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
   const [filterComplete, setFilterComplete] = useState(false)
 
   const loadTasks = useCallback(async () => {
@@ -417,103 +324,85 @@ export default function Tasks() {
   }, [])
 
   async function handleCreate(data) {
-    const ref = await addDoc(collection(db, 'tasks'), {
+    await addDoc(collection(db, 'tasks'), {
       ...data,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     await loadTasks()
-    // Select the newly created task
-    setSelected({ ...data, id: ref.id, created_at: new Date().toISOString() })
   }
 
   function handleUpdate(updated) {
     setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
-    setSelected(updated)
   }
 
   async function handleDelete(id) {
     await deleteDoc(doc(db, 'tasks', id))
     setTasks(prev => prev.filter(t => t.id !== id))
-    setSelected(null)
   }
 
-  const displayed = tasks.filter(t => {
-    const complete = t.activeStageIndex >= (t.stages?.length || 0) && (t.stages?.length || 0) > 0
-    return filterComplete ? true : !complete
-  })
+  const isTaskComplete = t => {
+    const stages = t.stages || []
+    return stages.length > 0 && stages.filter(s => s.completedAt).length >= stages.length
+  }
 
-  const completeCount = tasks.filter(t =>
-    t.activeStageIndex >= (t.stages?.length || 0) && (t.stages?.length || 0) > 0
-  ).length
+  const displayed = tasks.filter(t => filterComplete ? true : !isTaskComplete(t))
+  const completeCount = tasks.filter(isTaskComplete).length
 
   return (
-    <div className="flex h-full overflow-hidden bg-bb-light">
-      {/* Left pane — task list */}
-      <div className="w-[320px] shrink-0 flex flex-col h-full border-r border-bb-border bg-white">
-        {/* Header */}
-        <div className="px-4 py-4 border-b border-bb-border">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-semibold text-gray-900">
+    <div className="h-full overflow-y-auto bg-bb-light">
+      <div className="max-w-2xl mx-auto px-4 py-6">
+        {/* Page header */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">Tasks</h1>
+            <p className="text-xs text-gray-400 mt-0.5">
               {displayed.length} task{displayed.length !== 1 ? 's' : ''}
-            </span>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5"
-            >
-              <PlusIcon /> New Task
-            </button>
+              {completeCount > 0 && (
+                <button
+                  onClick={() => setFilterComplete(p => !p)}
+                  className={`ml-2 underline transition-colors ${filterComplete ? 'text-bb-green' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  {filterComplete ? 'hide' : 'show'} {completeCount} complete
+                </button>
+              )}
+            </p>
           </div>
           <button
-            onClick={() => setFilterComplete(p => !p)}
-            className={`text-xs font-medium transition-colors ${filterComplete ? 'text-bb-green' : 'text-gray-400 hover:text-gray-600'}`}
+            onClick={() => setShowCreate(true)}
+            className="btn-primary flex items-center gap-1.5 text-sm px-4 py-2"
           >
-            {filterComplete ? 'Hiding' : 'Show'} {completeCount} complete
+            <PlusIcon /> New Task
           </button>
         </div>
 
         {/* Task list */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {loading && (
-            <div className="flex justify-center pt-8">
-              <div className="w-5 h-5 border-2 border-bb-green border-t-transparent rounded-full animate-spin" />
-            </div>
-          )}
-          {!loading && displayed.length === 0 && (
-            <div className="text-center pt-12 text-gray-400">
-              <div className="text-3xl mb-2">✅</div>
-              <p className="text-sm">{tasks.length === 0 ? 'No tasks yet' : 'All done!'}</p>
-            </div>
-          )}
-          {displayed.map(task => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              selected={selected?.id === task.id}
-              onSelect={setSelected}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Right pane — task detail */}
-      <div className="flex-1 overflow-hidden bg-bb-light">
-        {selected ? (
-          <div className="h-full bg-white m-4 rounded-2xl border border-bb-border shadow-card overflow-hidden">
-            <TaskDetail
-              key={selected.id}
-              task={selected}
-              onUpdate={handleUpdate}
-              onDelete={handleDelete}
-            />
+        {loading ? (
+          <div className="flex justify-center pt-16">
+            <div className="w-5 h-5 border-2 border-bb-green border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : displayed.length === 0 ? (
+          <div className="text-center pt-20 text-gray-400">
+            <div className="text-4xl mb-3">📋</div>
+            <p className="text-sm font-medium text-gray-500">
+              {tasks.length === 0 ? 'No tasks yet' : 'All done!'}
+            </p>
+            {tasks.length === 0 && (
+              <button onClick={() => setShowCreate(true)} className="btn-primary text-sm flex items-center gap-2 mx-auto mt-4">
+                <PlusIcon /> Create your first task
+              </button>
+            )}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
-            <div className="text-5xl">📋</div>
-            <p className="text-sm font-medium text-gray-500">Select a task to view its timeline</p>
-            <button onClick={() => setShowCreate(true)} className="btn-primary text-sm flex items-center gap-2 mt-2">
-              <PlusIcon /> Create your first task
-            </button>
+          <div className="space-y-2">
+            {displayed.map(task => (
+              <TaskAccordion
+                key={task.id}
+                task={task}
+                onUpdate={handleUpdate}
+                onDelete={handleDelete}
+              />
+            ))}
           </div>
         )}
       </div>
