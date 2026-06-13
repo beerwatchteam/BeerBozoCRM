@@ -588,12 +588,12 @@ exports.suggestTaskStages = onCall({ secrets: [anthropicKey], cors: true, invoke
 
   const prompt = `You are helping organise work for BeerBozo — an Australian app showing cheapest drink prices at pubs and bars.
 
-Suggest 3-6 stages for this task as a simple pipeline (like a kanban board).
+Suggest 3-7 actionable stages for the task below. Use the title AND description together to understand exactly what needs to happen, and tailor the stages to the specific work involved — not generic steps like "Research, Draft, Done".
 
 Task: ${taskName}
-Description: ${description || ''}
+Description: ${description || '(no description provided)'}
 
-Return ONLY a JSON array of short stage name strings (max 4 words each). No preamble, no explanation. Example: ["Research", "Draft", "Review", "Done"]`
+Return ONLY a JSON array of short stage name strings (max 5 words each). No preamble, no explanation. Example: ["Contact venue", "Get pricing info", "Upload to app", "QA check", "Live"]`
 
   try {
     const text = await callClaude(apiKey, {
