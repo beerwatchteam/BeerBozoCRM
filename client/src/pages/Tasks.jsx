@@ -109,7 +109,7 @@ function CreateTaskModal({ onClose, onSave }) {
 // Task Column (Trello-style)
 // ---------------------------------------------------------------------------
 
-function TaskColumn({ task, onUpdate, onDelete }) {
+function TaskColumn({ task, onUpdate, onDelete, onReload }) {
   const [collapsed, setCollapsed]   = useState(false)
   const [toggling, setToggling]     = useState(null)
   const [editing, setEditing]       = useState(false)
@@ -162,7 +162,7 @@ function TaskColumn({ task, onUpdate, onDelete }) {
         updated_at: new Date().toISOString(),
       }
       await updateDoc(doc(db, 'tasks', task.id), payload)
-      onUpdate({ ...task, ...payload })
+      await onReload()
       setEditing(false)
     } catch (err) {
       console.error('saveEdit failed:', err)
@@ -464,6 +464,7 @@ export default function Tasks() {
                 task={task}
                 onUpdate={handleUpdate}
                 onDelete={handleDelete}
+                onReload={loadTasks}
               />
             ))}
 

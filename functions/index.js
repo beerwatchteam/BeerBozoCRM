@@ -597,13 +597,16 @@ Return ONLY a JSON array of short stage name strings (max 5 words each). No prea
 
   try {
     const text = await callClaude(apiKey, {
-      maxTokens: 128,
+      maxTokens: 512,
       messages: [{ role: 'user', content: prompt }],
     })
-    const stages = JSON.parse(text)
+    // Strip markdown code fences if Claude wraps the response
+    const cleaned = text.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
+    const stages = JSON.parse(cleaned)
     if (!Array.isArray(stages)) throw new Error('Not an array')
     return { stages: stages.slice(0, 8) }
-  } catch {
+  } catch (err) {
+    console.error('suggestTaskStages error:', err)
     return { stages: ['To Do', 'In Progress', 'Done'] }
   }
 })
