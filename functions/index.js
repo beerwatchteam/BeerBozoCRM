@@ -9,11 +9,9 @@ const db = getFirestore()
 
 const anthropicKey = defineSecret('ANTHROPIC_API_KEY')
 
-// Buffer OAuth secrets — set via:
-//   firebase functions:secrets:set BUFFER_CLIENT_ID
-//   firebase functions:secrets:set BUFFER_CLIENT_SECRET
-const bufferClientId     = defineSecret('BUFFER_CLIENT_ID')
-const bufferClientSecret = defineSecret('BUFFER_CLIENT_SECRET')
+// Buffer personal access token — set via:
+//   firebase functions:secrets:set BUFFER_ACCESS_TOKEN
+const bufferAccessToken = defineSecret('BUFFER_ACCESS_TOKEN')
 
 // ---------------------------------------------------------------------------
 // Gmail helpers
@@ -637,118 +635,46 @@ async function bufferGraphQL(accessToken, query, variables = {}) {
     },
     body: JSON.stringify({ query, variables }),
   })
-
-  if (!res.ok) {
-    throw new BufferApiError(`Buffer API error ${res.status}`, res.status)
-  }
-
+  if (!res.ok) throw new BufferApiError(`Buffer API error ${res.status}`, res.status)
   const data = await res.json()
-  if (data.errors) {
-    const status = data.errors[0]?.extensions?.status || 500
-    throw new BufferApiError(data.errors[0]?.message || 'Buffer GraphQL error', status)
+  if (data.errors && !data.data) {
+    throw new BufferApiError(data.errors[0]?.message || 'Buffer GraphQL error', 500)
   }
-
   return data
 }
 
-// Read the stored Buffer access token for this user from Firestore
-async function getBufferToken(uid) {
-  const snap = await db.doc(`users/${uid}/integrations/buffer`).get()
-  if (!snap.exists || !snap.data().accessToken) {
-    throw new HttpsError('failed-precondition', 'Buffer not connected')
-  }
-  return snap.data().accessToken
+// Fetch the first org ID for this token
+async function bufferOrgId(accessToken) {
+  const data = await bufferGraphQL(accessToken, '{ account { organizations { id } } }')
+  const orgs = data.data?.account?.organizations || []
+  if (!orgs.length) throw new HttpsError('internal', 'No Buffer organisation found')
+  return orgs[0].id
 }
 
 // ---------------------------------------------------------------------------
-// getBufferAuthUrl
-// Returns the Buffer OAuth URL for the frontend to redirect to
-// ---------------------------------------------------------------------------
-
-exports.getBufferAuthUrl = onCall({ secrets: [bufferClientId], cors: true, invoker: 'public' }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
-  const { redirectUri } = request.data
-  if (!redirectUri) throw new HttpsError('invalid-argument', 'redirectUri is required')
-
-  const clientId = bufferClientId.value()
-  const url = `https://bufferapp.com/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`
-  return { url }
-})
-
-// ---------------------------------------------------------------------------
-// bufferOAuthCallback
-// Exchanges the OAuth code for an access token and stores it in Firestore
-// ---------------------------------------------------------------------------
-
-exports.bufferOAuthCallback = onCall({ secrets: [bufferClientId, bufferClientSecret], cors: true, invoker: 'public' }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
-  const { code, redirectUri } = request.data
-  if (!code || !redirectUri) throw new HttpsError('invalid-argument', 'code and redirectUri are required')
-
-  const res = await fetch('https://api.bufferapp.com/1/oauth2/token.json', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id:     bufferClientId.value(),
-      client_secret: bufferClientSecret.value(),
-      redirect_uri:  redirectUri,
-      code,
-      grant_type:    'authorization_code',
-    }),
-  })
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new HttpsError('internal', `Buffer token exchange failed: ${err.error || res.status}`)
-  }
-
-  const data = await res.json()
-  if (!data.access_token) throw new HttpsError('internal', 'No access token returned by Buffer')
-
-  await db.doc(`users/${request.auth.uid}/integrations/buffer`).set({
-    accessToken:  data.access_token,
-    connectedAt:  new Date().toISOString(),
-  })
-
-  return { success: true }
-})
-
-// ---------------------------------------------------------------------------
 // getBufferStats
-// Returns: [{ platform, name, connected, followerCount }] for Instagram/TikTok/Facebook
+// Returns: [{ platform, name, connected, avatar }] for Instagram/TikTok/Facebook
 // ---------------------------------------------------------------------------
 
-exports.getBufferStats = onCall({ cors: true, invoker: 'public' }, async (request) => {
+exports.getBufferStats = onCall({ secrets: [bufferAccessToken], cors: true, invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
-  const accessToken = await getBufferToken(request.auth.uid)
-
-  const query = `
-    query {
-      organization {
-        channels {
-          id
-          service
-          name
-          statistics {
-            followers
-          }
-        }
-      }
-    }
-  `
+  const token = bufferAccessToken.value()
 
   try {
-    const data = await bufferGraphQL(accessToken, query)
-    const channels = data.data?.organization?.channels || []
-    const TARGET = ['instagram', 'tiktok', 'facebook']
+    const orgId = await bufferOrgId(token)
+    const data  = await bufferGraphQL(token, `
+      { channels(input: { organizationId: "${orgId}" }) { id service name avatar } }
+    `)
+    const channels = data.data?.channels || []
+    const TARGET   = ['instagram', 'tiktok', 'facebook']
 
     return TARGET.map(platform => {
       const ch = channels.find(c => c.service?.toLowerCase() === platform)
       return {
         platform,
-        name: ch?.name || null,
+        name:      ch?.name   || null,
+        avatar:    ch?.avatar || null,
         connected: !!ch,
-        followerCount: ch?.statistics?.followers ?? null,
       }
     })
   } catch (err) {
@@ -763,48 +689,32 @@ exports.getBufferStats = onCall({ cors: true, invoker: 'public' }, async (reques
 // Returns: { success: true, postIds: [] }
 // ---------------------------------------------------------------------------
 
-exports.scheduleBufferPost = onCall({ cors: true, invoker: 'public' }, async (request) => {
+exports.scheduleBufferPost = onCall({ secrets: [bufferAccessToken], cors: true, invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
   const { caption, platforms, scheduledAt } = request.data
   if (!caption || !platforms?.length || !scheduledAt) {
     throw new HttpsError('invalid-argument', 'caption, platforms, and scheduledAt are required')
   }
 
-  const accessToken = await getBufferToken(request.auth.uid)
+  const token = bufferAccessToken.value()
+  const orgId = await bufferOrgId(token)
 
-  const channelQuery = `
-    query {
-      organization {
-        channels {
-          id
-          service
-        }
-      }
-    }
-  `
-  const channelData = await bufferGraphQL(accessToken, channelQuery)
-  const channels = channelData.data?.organization?.channels || []
-
-  const postIds = []
+  const chData   = await bufferGraphQL(token, `
+    { channels(input: { organizationId: "${orgId}" }) { id service } }
+  `)
+  const channels = chData.data?.channels || []
+  const postIds  = []
 
   for (const platform of platforms) {
     const ch = channels.find(c => c.service?.toLowerCase() === platform.toLowerCase())
     if (!ch) continue
-
-    const mutation = `
-      mutation CreatePost($input: CreatePostInput!) {
-        createPost(input: $input) {
-          post {
-            id
-            status
-          }
-        }
-      }
-    `
     try {
-      const result = await bufferGraphQL(accessToken, mutation, {
-        input: { channelId: ch.id, text: caption, scheduledAt },
-      })
+      const result = await bufferGraphQL(token,
+        `mutation CreatePost($input: CreatePostInput!) {
+           createPost(input: $input) { post { id status } }
+         }`,
+        { input: { channelId: ch.id, text: caption, scheduledAt } }
+      )
       const postId = result.data?.createPost?.post?.id
       if (postId) postIds.push(postId)
     } catch (err) {
@@ -820,37 +730,25 @@ exports.scheduleBufferPost = onCall({ cors: true, invoker: 'public' }, async (re
 // Returns: [{ id, text, scheduledAt, platform, status }]
 // ---------------------------------------------------------------------------
 
-exports.getScheduledPosts = onCall({ cors: true, invoker: 'public' }, async (request) => {
+exports.getScheduledPosts = onCall({ secrets: [bufferAccessToken], cors: true, invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
-  const accessToken = await getBufferToken(request.auth.uid)
-
-  const query = `
-    query {
-      posts(status: scheduled) {
-        edges {
-          node {
-            id
-            text
-            scheduledAt
-            channel {
-              service
-            }
-            status
-          }
-        }
-      }
-    }
-  `
+  const token = bufferAccessToken.value()
 
   try {
-    const data = await bufferGraphQL(accessToken, query)
+    const orgId = await bufferOrgId(token)
+    const data  = await bufferGraphQL(token, `
+      { posts(input: { organizationId: "${orgId}", status: scheduled }) {
+          edges { node { id text scheduledAt channel { service } status } }
+        }
+      }
+    `)
     const edges = data.data?.posts?.edges || []
     return edges.map(({ node }) => ({
-      id: node.id,
-      text: node.text,
+      id:          node.id,
+      text:        node.text,
       scheduledAt: node.scheduledAt,
-      platform: node.channel?.service || null,
-      status: node.status,
+      platform:    node.channel?.service || null,
+      status:      node.status,
     }))
   } catch (err) {
     if (err instanceof HttpsError) throw err
@@ -860,71 +758,31 @@ exports.getScheduledPosts = onCall({ cors: true, invoker: 'public' }, async (req
 
 // ---------------------------------------------------------------------------
 // getBufferAnalytics
-// Returns: { totalPosts, bestPost, platformBreakdown }
-//   OR:    { error: 'upgrade_required' } if Buffer plan is insufficient (403)
+// Returns: { totalPosts, platformBreakdown }
+//   OR:    { error: 'upgrade_required' } on 403
 // ---------------------------------------------------------------------------
 
-exports.getBufferAnalytics = onCall({ cors: true, invoker: 'public' }, async (request) => {
+exports.getBufferAnalytics = onCall({ secrets: [bufferAccessToken], cors: true, invoker: 'public' }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
-  const accessToken = await getBufferToken(request.auth.uid)
-
-  const query = `
-    query {
-      organization {
-        channels {
-          service
-          statistics {
-            followers
-          }
-        }
-      }
-      posts(status: sent, first: 100) {
-        edges {
-          node {
-            id
-            text
-            statistics {
-              clicks
-              impressions
-            }
-          }
-        }
-      }
-    }
-  `
+  const token = bufferAccessToken.value()
 
   try {
-    const data = await bufferGraphQL(accessToken, query)
-
-    const channels = data.data?.organization?.channels || []
-    const platformBreakdown = {}
-    for (const ch of channels) {
-      const key = ch.service ? ch.service.charAt(0).toUpperCase() + ch.service.slice(1) : null
-      if (key && ['Instagram', 'Tiktok', 'Facebook'].includes(key)) {
-        platformBreakdown[key === 'Tiktok' ? 'TikTok' : key] = {
-          followers: ch.statistics?.followers ?? null,
+    const orgId = await bufferOrgId(token)
+    const data  = await bufferGraphQL(token, `
+      { posts(input: { organizationId: "${orgId}", status: sent, first: 100 }) {
+          edges { node { id text } }
         }
       }
-    }
-
-    const posts = (data.data?.posts?.edges || []).map(e => e.node)
+    `)
+    const posts     = (data.data?.posts?.edges || []).map(e => e.node)
     const totalPosts = posts.length
+    const bestPost   = posts[0] ? { text: posts[0].text } : null
 
-    let bestPost = null
-    let bestImpressions = 0
-    for (const p of posts) {
-      const imp = p.statistics?.impressions || 0
-      if (imp > bestImpressions) {
-        bestImpressions = imp
-        bestPost = { text: p.text, impressions: imp }
-      }
-    }
-
-    return { totalPosts, bestPost, platformBreakdown }
+    return { totalPosts, bestPost, platformBreakdown: {} }
   } catch (err) {
     if (err instanceof BufferApiError && err.status === 403) return { error: 'upgrade_required' }
     if (err instanceof HttpsError) throw err
-    throw new HttpsError('internal', err.message || 'Failed to fetch Buffer analytics')
+    return { error: 'upgrade_required' }
   }
 })
 

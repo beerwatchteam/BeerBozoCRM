@@ -65,21 +65,14 @@ function Overview() {
   const [loading, setLoading]       = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError]           = useState(null)
-  const [notConnected, setNotConnected] = useState(false)
-  const [connecting, setConnecting] = useState(false)
 
   async function load() {
     try {
       const data = await api.post('/api/social/stats', {})
       setStats(data || [])
-      setNotConnected(false)
       setError(null)
     } catch (err) {
-      if (err.message?.includes('Buffer not connected')) {
-        setNotConnected(true)
-      } else {
-        setError(err.message)
-      }
+      setError(err.message)
     }
   }
 
@@ -91,18 +84,6 @@ function Overview() {
     setRefreshing(true)
     await load()
     setRefreshing(false)
-  }
-
-  async function handleConnect() {
-    setConnecting(true)
-    try {
-      const redirectUri = window.location.origin + '/auth/buffer/callback'
-      const data = await api.post('/api/buffer/auth-url', { redirectUri })
-      window.location.href = data.url
-    } catch (err) {
-      setError(err.message)
-      setConnecting(false)
-    }
   }
 
   // Build lookup by normalised platform name
@@ -127,17 +108,6 @@ function Overview() {
 
       {loading ? (
         <Spinner />
-      ) : notConnected ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-4">
-          <div className="text-3xl">🔗</div>
-          <p className="text-white font-semibold text-sm">Buffer not connected</p>
-          <p className="text-gray-500 text-xs text-center max-w-xs">
-            Connect your Buffer account to see platform stats, schedule posts, and view analytics.
-          </p>
-          <button onClick={handleConnect} disabled={connecting} className="btn-primary">
-            {connecting ? 'Redirecting...' : 'Connect Buffer'}
-          </button>
-        </div>
       ) : error ? (
         <div className="px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}</div>
       ) : (
@@ -160,14 +130,11 @@ function Overview() {
                   </span>
                 </div>
                 {connected && stat ? (
-                  <div className="space-y-0.5">
-                    {stat.name && <p className="text-xs text-gray-400">@{stat.name}</p>}
-                    {stat.followerCount != null && (
-                      <p className="text-xl font-bold text-white">
-                        {stat.followerCount.toLocaleString()}
-                        <span className="text-xs font-normal text-gray-400 ml-1">followers</span>
-                      </p>
+                  <div className="flex items-center gap-2">
+                    {stat.avatar && (
+                      <img src={stat.avatar} alt={stat.name} className="w-8 h-8 rounded-full border border-white/10" />
                     )}
+                    {stat.name && <p className="text-xs text-gray-300">@{stat.name}</p>}
                   </div>
                 ) : (
                   <p className="text-xs text-gray-500">Connect via Buffer to see stats</p>
