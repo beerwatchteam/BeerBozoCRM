@@ -139,6 +139,16 @@ async function routePost(path, body) {
     return invoke('chat', { personaId: chatMatch[1], ...body })
   }
 
+  // POST /api/buffer/auth-url
+  if (path === '/api/buffer/auth-url') {
+    return invoke('getBufferAuthUrl', body)
+  }
+
+  // POST /api/buffer/oauth-callback
+  if (path === '/api/buffer/oauth-callback') {
+    return invoke('bufferOAuthCallback', body)
+  }
+
   // POST /api/social/stats
   if (path === '/api/social/stats') {
     return invoke('getBufferStats', {})
