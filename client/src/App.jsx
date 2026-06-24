@@ -7,6 +7,7 @@ import Clients from './pages/Clients'
 import Tasks from './pages/Tasks'
 import ContentCalendar from './pages/ContentCalendar'
 import Social from './pages/Social'
+import Privacy from './pages/Privacy'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ user, loading, children }) {
@@ -49,6 +50,7 @@ export default function App() {
         />
       ))}
 
+      <Route path="/privacy" element={<Privacy />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
