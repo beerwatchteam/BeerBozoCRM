@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useState, useRef, useEffect } from 'react'
 import {
-  InboxIcon, ClientsIcon, TasksIcon, CalendarIcon, InternalIcon, SettingsIcon,
+  InboxIcon, ClientsIcon, TasksIcon, CalendarIcon, InternalIcon, SettingsIcon, SocialIcon,
 } from './Icons'
 
 const NAV_ITEMS = [
@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: '/clients',  label: 'Clients',   Icon: ClientsIcon  },
   { to: '/tasks',    label: 'Tasks',     Icon: TasksIcon    },
   { to: '/calendar', label: 'Calendar',  Icon: CalendarIcon },
+  { to: '/social',   label: 'Social',    Icon: SocialIcon   },
   { to: '/internal', label: 'Internal',  Icon: InternalIcon },
 ]
 
@@ -17,6 +18,7 @@ const PAGE_TITLES = {
   '/clients':  'Clients',
   '/tasks':    'Tasks',
   '/calendar': 'Content Calendar',
+  '/social':   'Social Media',
   '/internal': 'Internal Team',
   '/settings': 'Settings',
 }

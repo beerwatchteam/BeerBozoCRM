@@ -139,6 +139,31 @@ async function routePost(path, body) {
     return invoke('chat', { personaId: chatMatch[1], ...body })
   }
 
+  // POST /api/social/stats
+  if (path === '/api/social/stats') {
+    return invoke('getBufferStats', {})
+  }
+
+  // POST /api/social/schedule
+  if (path === '/api/social/schedule') {
+    return invoke('scheduleBufferPost', body)
+  }
+
+  // POST /api/social/scheduled
+  if (path === '/api/social/scheduled') {
+    return invoke('getScheduledPosts', {})
+  }
+
+  // POST /api/social/analytics
+  if (path === '/api/social/analytics') {
+    return invoke('getBufferAnalytics', {})
+  }
+
+  // POST /api/social/generate-caption
+  if (path === '/api/social/generate-caption') {
+    return invoke('generateSocialCaption', body)
+  }
+
   throw new Error(`Unknown POST path: ${path}`)
 }
 

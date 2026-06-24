@@ -9,6 +9,10 @@ const db = getFirestore()
 
 const anthropicKey = defineSecret('ANTHROPIC_API_KEY')
 
+// BUFFER_API_KEY — set via: firebase functions:secrets:set BUFFER_API_KEY
+// Then paste your Buffer access token when prompted.
+const bufferApiKey = defineSecret('BUFFER_API_KEY')
+
 // ---------------------------------------------------------------------------
 // Gmail helpers
 // ---------------------------------------------------------------------------
@@ -609,4 +613,300 @@ Return ONLY a JSON array of short stage name strings (max 5 words each). No prea
     console.error('suggestTaskStages error:', err)
     return { stages: ['To Do', 'In Progress', 'Done'] }
   }
+})
+
+// ---------------------------------------------------------------------------
+// Buffer helpers
+// ---------------------------------------------------------------------------
+
+// Custom error class so getBufferAnalytics can detect 403 and return
+// { error: 'upgrade_required' } without throwing to the client.
+class BufferApiError extends Error {
+  constructor(message, status) {
+    super(message)
+    this.status = status
+  }
+}
+
+async function bufferGraphQL(apiKey, query, variables = {}) {
+  const res = await fetch('https://api.buffer.com/graphql', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // Auth: Bearer <BUFFER_API_KEY secret>
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ query, variables }),
+  })
+
+  if (!res.ok) {
+    throw new BufferApiError(`Buffer API error ${res.status}`, res.status)
+  }
+
+  const data = await res.json()
+  if (data.errors) {
+    const status = data.errors[0]?.extensions?.status || 500
+    throw new BufferApiError(data.errors[0]?.message || 'Buffer GraphQL error', status)
+  }
+
+  return data
+}
+
+// ---------------------------------------------------------------------------
+// getBufferStats
+// Returns: [{ platform, name, connected, followerCount }] for Instagram/TikTok/Facebook
+// ---------------------------------------------------------------------------
+
+exports.getBufferStats = onCall({ secrets: [bufferApiKey], cors: true, invoker: 'public' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
+  const apiKey = bufferApiKey.value()
+
+  const query = `
+    query {
+      organization {
+        channels {
+          id
+          service
+          name
+          statistics {
+            followers
+          }
+        }
+      }
+    }
+  `
+
+  try {
+    const data = await bufferGraphQL(apiKey, query)
+    const channels = data.data?.organization?.channels || []
+    const TARGET = ['instagram', 'tiktok', 'facebook']
+
+    return TARGET.map(platform => {
+      const ch = channels.find(c => c.service?.toLowerCase() === platform)
+      return {
+        platform,
+        name: ch?.name || null,
+        connected: !!ch,
+        followerCount: ch?.statistics?.followers ?? null,
+      }
+    })
+  } catch (err) {
+    if (err instanceof HttpsError) throw err
+    throw new HttpsError('internal', err.message || 'Failed to fetch Buffer stats')
+  }
+})
+
+// ---------------------------------------------------------------------------
+// scheduleBufferPost
+// Accepts: { caption, platforms[], scheduledAt }
+// Returns: { success: true, postIds: [] }
+// ---------------------------------------------------------------------------
+
+exports.scheduleBufferPost = onCall({ secrets: [bufferApiKey], cors: true, invoker: 'public' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
+  const { caption, platforms, scheduledAt } = request.data
+  if (!caption || !platforms?.length || !scheduledAt) {
+    throw new HttpsError('invalid-argument', 'caption, platforms, and scheduledAt are required')
+  }
+
+  const apiKey = bufferApiKey.value()
+
+  // Fetch channel IDs first
+  const channelQuery = `
+    query {
+      organization {
+        channels {
+          id
+          service
+        }
+      }
+    }
+  `
+  const channelData = await bufferGraphQL(apiKey, channelQuery)
+  const channels = channelData.data?.organization?.channels || []
+
+  const postIds = []
+
+  for (const platform of platforms) {
+    const ch = channels.find(c => c.service?.toLowerCase() === platform.toLowerCase())
+    if (!ch) continue
+
+    const mutation = `
+      mutation CreatePost($input: CreatePostInput!) {
+        createPost(input: $input) {
+          post {
+            id
+            status
+          }
+        }
+      }
+    `
+    const variables = {
+      input: {
+        channelId: ch.id,
+        text: caption,
+        scheduledAt,
+      },
+    }
+
+    try {
+      const result = await bufferGraphQL(apiKey, mutation, variables)
+      const postId = result.data?.createPost?.post?.id
+      if (postId) postIds.push(postId)
+    } catch (err) {
+      console.error(`scheduleBufferPost failed for ${platform}:`, err.message)
+    }
+  }
+
+  return { success: true, postIds }
+})
+
+// ---------------------------------------------------------------------------
+// getScheduledPosts
+// Returns: [{ id, text, scheduledAt, platform, status }]
+// ---------------------------------------------------------------------------
+
+exports.getScheduledPosts = onCall({ secrets: [bufferApiKey], cors: true, invoker: 'public' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
+  const apiKey = bufferApiKey.value()
+
+  const query = `
+    query {
+      posts(status: scheduled) {
+        edges {
+          node {
+            id
+            text
+            scheduledAt
+            channel {
+              service
+            }
+            status
+          }
+        }
+      }
+    }
+  `
+
+  try {
+    const data = await bufferGraphQL(apiKey, query)
+    const edges = data.data?.posts?.edges || []
+    return edges.map(({ node }) => ({
+      id: node.id,
+      text: node.text,
+      scheduledAt: node.scheduledAt,
+      platform: node.channel?.service || null,
+      status: node.status,
+    }))
+  } catch (err) {
+    if (err instanceof HttpsError) throw err
+    throw new HttpsError('internal', err.message || 'Failed to fetch scheduled posts')
+  }
+})
+
+// ---------------------------------------------------------------------------
+// getBufferAnalytics
+// Returns: { totalPosts, bestPost, platformBreakdown }
+//   OR:    { error: 'upgrade_required' } if Buffer plan is insufficient (403)
+// ---------------------------------------------------------------------------
+
+exports.getBufferAnalytics = onCall({ secrets: [bufferApiKey], cors: true, invoker: 'public' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
+  const apiKey = bufferApiKey.value()
+
+  const query = `
+    query {
+      organization {
+        channels {
+          service
+          statistics {
+            followers
+          }
+        }
+      }
+      posts(status: sent, first: 100) {
+        edges {
+          node {
+            id
+            text
+            statistics {
+              clicks
+              impressions
+            }
+          }
+        }
+      }
+    }
+  `
+
+  try {
+    const data = await bufferGraphQL(apiKey, query)
+
+    // Build per-platform follower breakdown
+    const channels = data.data?.organization?.channels || []
+    const platformBreakdown = {}
+    for (const ch of channels) {
+      const key = ch.service ? ch.service.charAt(0).toUpperCase() + ch.service.slice(1) : null
+      if (key && ['Instagram', 'Tiktok', 'Facebook'].includes(key)) {
+        platformBreakdown[key === 'Tiktok' ? 'TikTok' : key] = {
+          followers: ch.statistics?.followers ?? null,
+        }
+      }
+    }
+
+    // Find best post by impressions
+    const posts = (data.data?.posts?.edges || []).map(e => e.node)
+    const totalPosts = posts.length
+
+    let bestPost = null
+    let bestImpressions = 0
+    for (const p of posts) {
+      const imp = p.statistics?.impressions || 0
+      if (imp > bestImpressions) {
+        bestImpressions = imp
+        bestPost = { text: p.text, impressions: imp }
+      }
+    }
+
+    return { totalPosts, bestPost, platformBreakdown }
+  } catch (err) {
+    // 403 means the Buffer account needs a paid plan for analytics
+    if (err instanceof BufferApiError && err.status === 403) {
+      return { error: 'upgrade_required' }
+    }
+    if (err instanceof HttpsError) throw err
+    throw new HttpsError('internal', err.message || 'Failed to fetch Buffer analytics')
+  }
+})
+
+// ---------------------------------------------------------------------------
+// generateSocialCaption
+// Accepts: { topic, platforms[] }
+// Returns: { caption }
+// Uses same callClaude helper and model as the rest of the project
+// ---------------------------------------------------------------------------
+
+exports.generateSocialCaption = onCall({ secrets: [anthropicKey], cors: true, invoker: 'public' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Must be logged in')
+  const { topic, platforms } = request.data
+  if (!topic?.trim()) throw new HttpsError('invalid-argument', 'topic is required')
+
+  const apiKey = anthropicKey.value()
+  const platformList = platforms?.length ? platforms.join(', ') : 'Instagram, TikTok, Facebook'
+
+  const prompt = `You are writing a social media post for BeerBozo — an Australian app that shows cheapest drink prices at pubs and bars. The handle is @beerbozo.com.au.
+
+Topic: ${topic}
+Platforms: ${platformList}
+
+Write an engaging, on-brand caption. Include relevant emojis, a clear call to action, and appropriate hashtags at the end. Keep it concise and punchy — max 3 short paragraphs. Use an Australian tone that is fun and relatable.
+
+Return ONLY the caption text, no preamble or explanation.`
+
+  const caption = await callClaude(apiKey, {
+    maxTokens: 512,
+    messages: [{ role: 'user', content: prompt }],
+  })
+
+  return { caption }
 })

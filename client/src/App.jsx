@@ -6,6 +6,7 @@ import Internal from './pages/Internal'
 import Clients from './pages/Clients'
 import Tasks from './pages/Tasks'
 import ContentCalendar from './pages/ContentCalendar'
+import Social from './pages/Social'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ user, loading, children }) {
@@ -32,6 +33,7 @@ export default function App() {
         { path: '/clients',  El: Clients        },
         { path: '/tasks',    El: Tasks          },
         { path: '/calendar', El: ContentCalendar },
+        { path: '/social',   El: Social         },
         { path: '/internal', El: Internal       },
       ].map(({ path, El }) => (
         <Route
